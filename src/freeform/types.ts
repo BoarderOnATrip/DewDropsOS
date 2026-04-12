@@ -4,6 +4,8 @@ export type CardKind = 'problem' | 'agent' | 'surface'
 /** Who moves the agent on the board — you, or orchestration (future swarm scheduler). */
 export type AgentManagement = 'manual' | 'auto'
 
+export type SwarmTemplate = 'planning' | 'relationship' | 'operator' | 'research' | 'build'
+
 export type WorkflowCard = {
   id: string
   x: number
@@ -28,6 +30,14 @@ export type WorkflowCard = {
   management?: AgentManagement
   /** Problem only: north-star brief (LifeGirdle-style); shown in card body */
   mission?: string
+  /** Problem only: preferred Butler swarm template when launching from DewDrops */
+  swarmTemplate?: SwarmTemplate
+  /** Problem only: canonical Butler room binding for this board object */
+  butlerRoomId?: string
+  /** Problem only: latest Butler swarm contract launched from this board object */
+  lastSwarmContractId?: string
+  /** Problem only: latest Butler swarm run launched from this board object */
+  lastSwarmRunId?: string
   /** Uncertainties / decisions you owe — surfaced with a flash until you steer or resolve them */
   openQuestions?: string[]
   /** Specialist signals no useful work left — release needs lead nod too */

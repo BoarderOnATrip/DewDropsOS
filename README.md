@@ -1,6 +1,6 @@
 # DewDrops
 
-Interactive **freeform board** for orchestrating problem hubs and agent cards: pan/zoom, drag-to-combine swarms, marquee selection, and local persistence in the browser.
+Interactive **freeform board** for orchestrating problem hubs and agent cards: pan/zoom, drag-to-combine swarms, marquee selection, local persistence in the browser, and optional swarm launch into a local Butler bridge.
 
 The shipped app surface is the freeform board in [src/freeform](./src/freeform). Older or dormant explorations live under [experiments](./experiments) so they do not read like active product code.
 
@@ -35,9 +35,25 @@ Board layout, camera, and card positions are **auto-saved** (debounced) under th
 
 **Export** downloads a versioned JSON snapshot (same schema as local storage): use it for backups, pasting into issues, or checking boards into git. **Import** replaces the live board after validation so a bad file cannot corrupt state.
 
+## AI / multi-agent contributors
+
+If **Cursor** and **Codex** (or any two agents) both touch this tree, read **[`AGENTS.md`](./AGENTS.md)** for an explicit file-level work split. Product sync rules for Butler ↔ DewDrops live in the repo root **[`BOUNDARY_SPEC.md`](../BOUNDARY_SPEC.md)**.
+
+## Butler bridge prototype
+
+If Butler-os is running its local bridge on `http://127.0.0.1:8765`, the toolbar exposes a small swarm launcher:
+
+- select one problem bubble
+- review or edit the generated swarm objective
+- choose a template
+- launch into Butler
+- inspect recent runs for the selected room
+
+For local browser development, the Butler bridge accepts `localhost` requests without a manual token unless local token enforcement has been explicitly enabled. DewDrops persists any bridge URL/token you enter in browser storage.
+
 ## What this is
 
-A **front-end prototype**: no auth, no server sync, no live agent execution. Suitable for demos, design iteration, and as a shell for a future backend.
+A **desktop prototype with a live local execution seam**. The board is still local-first, but it can now launch Butler swarms when a compatible local bridge is available. It is suitable for demos, design iteration, and early operator workflows.
 
 ## Experimental Surfaces
 

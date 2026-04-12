@@ -3,6 +3,20 @@ import { flushSync } from 'react-dom'
 import type { BoardCamera, BoardWire, WorkflowCard } from './types'
 import { hedgerowsDeltaSquadCards, hedgerowsPresetAgentCount } from './presets/hedgerowsDeltaSquad'
 import {
+  ButlerBridgeError,
+  createSwarmContract,
+  getButlerBridgeHealth,
+  launchSwarmContract,
+  listSwarmRuns,
+  loadButlerBridgeSettings,
+  pairLocalBridge,
+  saveButlerBridgeSettings,
+  type ButlerBridgeHealth,
+  type ButlerBridgeSettings,
+  type ButlerSwarmRun,
+  type ButlerSwarmTemplate,
+} from '../lib/butlerBridge'
+import {
   clearPersistedBoard,
   inferAgentSummonCount,
   loadPersistedBoard,
@@ -680,6 +694,43 @@ function getBootStateOnce(): BootState {
   return bootStateMemo
 }
 
+function buildProblemSwarmObjective(problem: WorkflowCard, cards: WorkflowCard[], wires: BoardWire[]): string {
+  const sections: string[] = [problem.title.trim()]
+  if (problem.mission?.trim()) {
+    sections.push(problem.mission.trim())
+  }
+
+  const openItems = openQuestionsForCard(problem, cards, wires)
+  if (openItems.length > 0) {
+    sections.push(`Open questions:\n- ${openItems.join('\n- ')}`)
+  }
+
+  const assignedAgents = agentsInProblemSwarm(problem.id, cards, wires)
+  if (assignedAgents.length > 0) {
+    sections.push(`Current swarm:\n- ${assignedAgents.map((agent) => agent.title).join('\n- ')}`)
+  }
+
+  sections.push('Operate from the DewDrops problem room and leave a resumable Butler swarm report.')
+  return sections.filter(Boolean).join('\n\n')
+}
+
+function swarmRunIsActive(status: string | undefined): boolean {
+  return status === 'queued' || status === 'running' || status === 'staged'
+}
+
+function formatRunStatus(status: string | undefined): string {
+  if (!status) return 'unknown'
+  return status.replace(/_/g, ' ')
+}
+
+const SWARM_TEMPLATE_OPTIONS: Array<{ value: ButlerSwarmTemplate; label: string }> = [
+  { value: 'planning', label: 'Planning' },
+  { value: 'build', label: 'Build' },
+  { value: 'research', label: 'Research' },
+  { value: 'operator', label: 'Operator' },
+  { value: 'relationship', label: 'Relationship' },
+]
+
 export default function BoardView() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
@@ -692,6 +743,13 @@ export default function BoardView() {
     null,
   )
   const [boardNotice, setBoardNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null)
+  const [bridgeSettings, setBridgeSettings] = useState<ButlerBridgeSettings>(() => loadButlerBridgeSettings())
+  const [bridgeHealth, setBridgeHealth] = useState<ButlerBridgeHealth | null>(null)
+  const [bridgeBusy, setBridgeBusy] = useState(false)
+  const [launchBusy, setLaunchBusy] = useState(false)
+  const [recentRuns, setRecentRuns] = useState<ButlerSwarmRun[]>([])
+  const [launchTemplate, setLaunchTemplate] = useState<ButlerSwarmTemplate>('planning')
+  const [launchObjective, setLaunchObjective] = useState('')
 
   const cardsRef = useRef(cards)
   const wiresRef = useRef(wires)
@@ -706,6 +764,12 @@ export default function BoardView() {
     suppressOverlapEjectionRef.current = true
   }, [])
   const handshakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const persistBridgeSettings = useCallback((next: ButlerBridgeSettings) => {
+    const normalized = saveButlerBridgeSettings(next)
+    setBridgeSettings(normalized)
+    return normalized
+  }, [])
 
   const fireConnectHandshake = useCallback((agentId: string, problemId: string) => {
     if (handshakeTimerRef.current) clearTimeout(handshakeTimerRef.current)
@@ -774,7 +838,6 @@ export default function BoardView() {
 
   useEffect(() => {
     /* Footprint reflow when swarm membership / wires change — keep problem hubs sized to mass. */
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived geometry pass after topology change
     setCards((prev) => {
       const next = normalizeProblemFootprint(prev, wires)
       return next === prev ? prev : next
@@ -1252,6 +1315,190 @@ export default function BoardView() {
     return () => window.clearTimeout(id)
   }, [boardNotice])
 
+  const selectedProblems = useMemo(
+    () =>
+      selectedIds
+        .map((id) => cards.find((card) => card.id === id && card.kind === 'problem'))
+        .filter((card): card is WorkflowCard => !!card),
+    [cards, selectedIds],
+  )
+
+  const selectedProblem = selectedProblems.length === 1 ? selectedProblems[0] : null
+
+  const selectedProblemAgents = useMemo(
+    () => (selectedProblem ? agentsInProblemSwarm(selectedProblem.id, cards, wires) : []),
+    [cards, selectedProblem, wires],
+  )
+
+  const selectedProblemDraftKey = useMemo(() => {
+    if (!selectedProblem) return ''
+    return [
+      selectedProblem.id,
+      selectedProblem.title,
+      selectedProblem.mission ?? '',
+      selectedProblem.swarmTemplate ?? '',
+      (selectedProblem.openQuestions ?? []).join('|'),
+      selectedProblemAgents.map((agent) => `${agent.id}:${agent.title}`).join('|'),
+    ].join('::')
+  }, [selectedProblem, selectedProblemAgents])
+
+  useEffect(() => {
+    if (!selectedProblem) {
+      setLaunchObjective('')
+      return
+    }
+    setLaunchTemplate((selectedProblem.swarmTemplate as ButlerSwarmTemplate | undefined) ?? 'planning')
+    setLaunchObjective(buildProblemSwarmObjective(selectedProblem, cards, wires))
+  }, [cards, selectedProblem, selectedProblemDraftKey, wires])
+
+  const visibleRuns = useMemo(() => {
+    if (selectedProblem?.butlerRoomId) {
+      const roomRuns = recentRuns.filter((run) => run.room_id === selectedProblem.butlerRoomId)
+      if (roomRuns.length > 0) return roomRuns
+    }
+    return recentRuns.slice(0, 6)
+  }, [recentRuns, selectedProblem?.butlerRoomId])
+
+  const refreshRuns = useCallback(
+    async (quiet = false) => {
+      try {
+        const runs = await listSwarmRuns(bridgeSettings, { limit: 12 })
+        setRecentRuns(runs)
+      } catch (error) {
+        if (!quiet) {
+          const message = error instanceof Error ? error.message : 'Could not load Butler swarm runs'
+          setBoardNotice({ text: message, tone: 'error' })
+        }
+      }
+    },
+    [bridgeSettings],
+  )
+
+  const refreshBridgeState = useCallback(
+    async (quiet = false) => {
+      setBridgeBusy(true)
+      try {
+        const health = await getButlerBridgeHealth(bridgeSettings)
+        setBridgeHealth(health)
+        await refreshRuns(true)
+        if (!quiet) {
+          setBoardNotice({
+            text: `Butler bridge online at ${bridgeSettings.url}`,
+            tone: 'ok',
+          })
+        }
+      } catch (error) {
+        setBridgeHealth(null)
+        if (!quiet) {
+          const message = error instanceof Error ? error.message : 'Could not reach Butler bridge'
+          setBoardNotice({ text: message, tone: 'error' })
+        }
+      } finally {
+        setBridgeBusy(false)
+      }
+    },
+    [bridgeSettings, refreshRuns],
+  )
+
+  const pairLocalBridgeAction = useCallback(async () => {
+    setBridgeBusy(true)
+    try {
+      const nextSettings = await pairLocalBridge(bridgeSettings)
+      setBridgeSettings(nextSettings)
+      const health = await getButlerBridgeHealth(nextSettings)
+      setBridgeHealth(health)
+      await refreshRuns(true)
+      setBoardNotice({
+        text: `Paired local Butler bridge at ${nextSettings.url}`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not pair with local Butler bridge'
+      setBoardNotice({ text: message, tone: 'error' })
+    } finally {
+      setBridgeBusy(false)
+    }
+  }, [bridgeSettings, refreshRuns])
+
+  const launchSelectedProblemSwarm = useCallback(async () => {
+    if (!selectedProblem) {
+      setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
+      return
+    }
+    if (!launchObjective.trim()) {
+      setBoardNotice({ text: 'Swarm objective is empty.', tone: 'error' })
+      return
+    }
+
+    setLaunchBusy(true)
+    try {
+      let nextSettings = bridgeSettings
+      const isLocalBridge = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(bridgeSettings.url.trim())
+      if (!nextSettings.token.trim() && isLocalBridge) {
+        nextSettings = await pairLocalBridge(bridgeSettings)
+        setBridgeSettings(nextSettings)
+      }
+
+      const contract = await createSwarmContract(nextSettings, {
+        title: selectedProblem.title,
+        objective: launchObjective.trim(),
+        template: launchTemplate,
+        room_id: selectedProblem.butlerRoomId,
+        room_kind: 'project',
+        target: 'local_desktop',
+        launcher: 'desktop',
+        metadata: {
+          dewdrops_problem_id: selectedProblem.id,
+          selected_agent_count: selectedProblemAgents.length,
+          selected_agent_ids: selectedProblemAgents.map((agent) => agent.id),
+        },
+        source_refs: [`dewdrops/cards/${selectedProblem.id}`],
+        created_by: 'dewdrops',
+      })
+      const launched = await launchSwarmContract(nextSettings, contract.id)
+      const runId = launched.run?.id ?? launched.run?.run_id ?? ''
+
+      setCards((list) =>
+        list.map((card) =>
+          card.id === selectedProblem.id
+            ? {
+                ...card,
+                butlerRoomId: contract.room_id,
+                lastSwarmContractId: contract.id,
+                lastSwarmRunId: runId || card.lastSwarmRunId,
+                swarmTemplate: launchTemplate,
+              }
+            : card,
+        ),
+      )
+      await refreshRuns(true)
+      setBoardNotice({
+        text: `Launched Butler swarm for “${selectedProblem.title}”`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      const message =
+        error instanceof ButlerBridgeError || error instanceof Error
+          ? error.message
+          : 'Could not launch Butler swarm'
+      setBoardNotice({ text: message, tone: 'error' })
+    } finally {
+      setLaunchBusy(false)
+    }
+  }, [bridgeSettings, launchObjective, launchTemplate, refreshRuns, selectedProblem, selectedProblemAgents])
+
+  useEffect(() => {
+    void refreshBridgeState(true)
+  }, [refreshBridgeState])
+
+  useEffect(() => {
+    if (!recentRuns.some((run) => swarmRunIsActive(run.status))) return
+    const id = window.setInterval(() => {
+      void refreshRuns(true)
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [recentRuns, refreshRuns])
+
   const onViewportDoubleClick = (e: React.MouseEvent) => {
     const el = pointerEventTargetEl(e)
     if (el?.closest('.freeform-card')) return
@@ -1337,6 +1584,189 @@ export default function BoardView() {
           <span>{availableAgentCount} available</span>
           <span>{totalOpenQuestionCount} open</span>
         </div>
+        <section className="freeform-toolbar-panel" aria-label="Butler swarm launcher">
+          <div className="freeform-toolbar-panel-header">
+            <div>
+              <h2>Butler bridge</h2>
+              <p>Launch a real swarm from one selected problem bubble.</p>
+            </div>
+            <div className="freeform-toolbar-panel-status">
+              <span
+                className={`freeform-run-pill${bridgeHealth?.ok ? ' is-online' : ' is-offline'}`}
+              >
+                {bridgeBusy ? 'checking' : bridgeHealth?.ok ? 'online' : 'offline'}
+              </span>
+              {bridgeHealth?.service ? <span>{bridgeHealth.service}</span> : null}
+              {bridgeHealth?.version ? <span>v{bridgeHealth.version}</span> : null}
+            </div>
+          </div>
+
+          <div className="freeform-toolbar-panel-grid">
+            <div className="freeform-toolbar-panel-section">
+              <label className="freeform-field">
+                <span>Bridge URL</span>
+                <input
+                  type="url"
+                  value={bridgeSettings.url}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    persistBridgeSettings({ ...bridgeSettings, url: e.target.value })
+                  }}
+                  placeholder="http://127.0.0.1:8765"
+                />
+              </label>
+              <label className="freeform-field">
+                <span>Token</span>
+                <input
+                  type="password"
+                  value={bridgeSettings.token}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    persistBridgeSettings({ ...bridgeSettings, token: e.target.value })
+                  }}
+                  placeholder="Optional on localhost"
+                />
+              </label>
+              <div className="freeform-toolbar-panel-actions">
+                <button
+                  type="button"
+                  className="freeform-btn freeform-btn--tool"
+                  onClick={() => {
+                    void pairLocalBridgeAction()
+                  }}
+                  disabled={bridgeBusy}
+                >
+                  {bridgeBusy ? 'Pairing…' : 'Pair local'}
+                </button>
+                <button
+                  type="button"
+                  className="freeform-btn freeform-btn--tool"
+                  onClick={() => {
+                    void refreshBridgeState(false)
+                  }}
+                  disabled={bridgeBusy}
+                >
+                  Check bridge
+                </button>
+                <button
+                  type="button"
+                  className="freeform-btn freeform-btn--tool"
+                  onClick={() => {
+                    void refreshRuns(false)
+                  }}
+                  disabled={bridgeBusy}
+                >
+                  Refresh runs
+                </button>
+              </div>
+              <p className="freeform-toolbar-panel-hint">
+                Localhost browser calls can use the local Butler bridge without a manual token.
+              </p>
+            </div>
+
+            <div className="freeform-toolbar-panel-section">
+              <div className="freeform-toolbar-panel-problem">
+                <div>
+                  <h3>{selectedProblem ? selectedProblem.title : 'No problem selected'}</h3>
+                  <p>
+                    {selectedProblem
+                      ? `${selectedProblemAgents.length} agent${selectedProblemAgents.length === 1 ? '' : 's'} in the swarm envelope`
+                      : 'Select exactly one problem bubble to launch a swarm.'}
+                  </p>
+                </div>
+                {selectedProblem?.lastSwarmRunId ? (
+                  <span className="freeform-run-pill">
+                    Last run {selectedProblem.lastSwarmRunId.slice(-6)}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="freeform-toolbar-panel-form-row">
+                <label className="freeform-field">
+                  <span>Template</span>
+                  <select
+                    value={launchTemplate}
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                      setLaunchTemplate(e.target.value as ButlerSwarmTemplate)
+                    }
+                    disabled={!selectedProblem || launchBusy}
+                  >
+                    {SWARM_TEMPLATE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="freeform-field">
+                <span>Objective</span>
+                <textarea
+                  value={launchObjective}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setLaunchObjective(e.target.value)}
+                  placeholder="Describe what this swarm should do."
+                  disabled={!selectedProblem || launchBusy}
+                  rows={5}
+                />
+              </label>
+
+              <div className="freeform-toolbar-panel-actions">
+                <button
+                  type="button"
+                  className="freeform-btn freeform-btn--tool is-active"
+                  onClick={() => {
+                    void launchSelectedProblemSwarm()
+                  }}
+                  disabled={!selectedProblem || launchBusy}
+                >
+                  {launchBusy ? 'Launching…' : 'Launch swarm'}
+                </button>
+              </div>
+            </div>
+
+            <div className="freeform-toolbar-panel-section">
+              <div className="freeform-toolbar-panel-problem">
+                <div>
+                  <h3>{selectedProblem?.butlerRoomId ? 'Room runs' : 'Recent runs'}</h3>
+                  <p>
+                    {selectedProblem?.butlerRoomId
+                      ? 'Runs attached to the selected problem room.'
+                      : 'Latest runs seen by the Butler bridge.'}
+                  </p>
+                </div>
+              </div>
+
+              {visibleRuns.length > 0 ? (
+                <ul className="freeform-run-list">
+                  {visibleRuns.map((run) => {
+                    const isCurrent = selectedProblem?.lastSwarmRunId === run.id || selectedProblem?.lastSwarmRunId === run.run_id
+                    return (
+                      <li
+                        key={run.id || run.run_id}
+                        className={`freeform-run-list-item${isCurrent ? ' is-current' : ''}`}
+                      >
+                        <div className="freeform-run-list-head">
+                          <strong>{run.title}</strong>
+                          <span
+                            className={`freeform-run-pill${swarmRunIsActive(run.status) ? ' is-active' : ''}`}
+                          >
+                            {formatRunStatus(run.status)}
+                          </span>
+                        </div>
+                        {run.summary ? <p>{run.summary}</p> : null}
+                        <div className="freeform-run-list-meta">
+                          <span>{run.run_id || run.id}</span>
+                          {run.updated_at ? <span>{run.updated_at.slice(11, 19)} UTC</span> : null}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="freeform-toolbar-panel-hint">No swarm runs yet.</p>
+              )}
+            </div>
+          </div>
+        </section>
         {boardNotice ? (
           <p
             className={`freeform-toolbar-notice${boardNotice.tone === 'error' ? ' freeform-toolbar-notice--error' : ''}`}

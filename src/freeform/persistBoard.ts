@@ -104,6 +104,18 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
     }
     if (w.management === 'manual' || w.management === 'auto') card.management = w.management
     if (isStr(w.mission)) card.mission = w.mission
+    if (
+      w.swarmTemplate === 'planning' ||
+      w.swarmTemplate === 'relationship' ||
+      w.swarmTemplate === 'operator' ||
+      w.swarmTemplate === 'research' ||
+      w.swarmTemplate === 'build'
+    ) {
+      card.swarmTemplate = w.swarmTemplate
+    }
+    if (isStr(w.butlerRoomId)) card.butlerRoomId = w.butlerRoomId
+    if (isStr(w.lastSwarmContractId)) card.lastSwarmContractId = w.lastSwarmContractId
+    if (isStr(w.lastSwarmRunId)) card.lastSwarmRunId = w.lastSwarmRunId
     if (Array.isArray(w.openQuestions) && w.openQuestions.every(isStr)) {
       card.openQuestions = w.openQuestions as string[]
     }
