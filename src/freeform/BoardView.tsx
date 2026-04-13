@@ -1920,6 +1920,7 @@ function WorkflowCardView({
             <span className={titleFrameClass}>
               <span className="freeform-card-title">{card.title}</span>
             </span>
+            {selected ? <span className="freeform-selection-badge">Selected</span> : null}
             {subagentCount > 0 ? (
               <span
                 className="freeform-subagent-count-badge"
@@ -1950,6 +1951,7 @@ function WorkflowCardView({
           <span className={titleFrameClass}>
             <span className="freeform-card-title">{card.title}</span>
           </span>
+          {selected ? <span className="freeform-selection-badge">Selected</span> : null}
           {card.kind === 'problem' && swarmMass > 0 ? (
             <span className="freeform-swarm-mass-badge" title="Swarm mass — specialists on this hub">
               ×{swarmMass}
