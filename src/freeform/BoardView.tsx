@@ -83,6 +83,19 @@ function eventPathHitsBoardCard(path: EventTarget[] | undefined): boolean {
   )
 }
 
+function boardCardIdAtClientPoint(clientX: number, clientY: number): string | null {
+  if (typeof document === 'undefined' || typeof document.elementsFromPoint !== 'function') {
+    return null
+  }
+  for (const el of document.elementsFromPoint(clientX, clientY)) {
+    const card = el.closest('[data-board-card]')
+    if (card instanceof HTMLElement) {
+      return card.dataset.boardCard ?? null
+    }
+  }
+  return null
+}
+
 /** Default board = Hedgerows 2.0 Δ squad (virtual company preset). */
 const SEED_CARDS: WorkflowCard[] = hedgerowsDeltaSquadCards()
 
@@ -426,10 +439,25 @@ export default function BoardView() {
   const onViewportPointerDown = (e: React.PointerEvent) => {
     const el = pointerEventTargetEl(e)
     if (!el) return
+    const pointCardId = boardCardIdAtClientPoint(e.clientX, e.clientY)
     const nativePath =
       typeof e.nativeEvent.composedPath === 'function'
         ? e.nativeEvent.composedPath()
         : undefined
+    if (pointCardId && !eventPathHitsBoardCard(nativePath)) {
+      e.preventDefault()
+      pushSelectionTrace('viewport.pointerdown', `fallback select ${pointCardId}`)
+      flushSync(() => {
+        setSelectedIds((prev) => {
+          if (e.shiftKey) {
+            if (prev.includes(pointCardId)) return prev.filter((id) => id !== pointCardId)
+            return [...prev, pointCardId]
+          }
+          return [pointCardId]
+        })
+      })
+      return
+    }
     /** React 19 may deliver parent handlers before child stopPropagation runs — never steal card hits. */
     if (
       eventPathHitsBoardCard(nativePath) ||
