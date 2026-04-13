@@ -1026,6 +1026,79 @@ export default function BoardView() {
     [cards],
   )
 
+  const moveCardSelection = useCallback(
+    (cardId: string, nx: number, ny: number) => {
+      setCards((list) => {
+        const cur = list.find((x) => x.id === cardId)
+        if (!cur) return list
+
+        const draggingSelection = selectedIds.length > 1 && selectedIds.includes(cardId)
+        if (draggingSelection) {
+          const dx = nx - cur.x
+          const dy = ny - cur.y
+          if (dx === 0 && dy === 0) return list
+          const movingIds = new Set(selectedIds)
+          return list.map((item) =>
+            movingIds.has(item.id)
+              ? { ...item, x: item.x + dx, y: item.y + dy }
+              : item,
+          )
+        }
+
+        if (cur.kind !== 'agent') {
+          return list.map((x) => (x.id === cardId ? { ...x, x: nx, y: ny } : x))
+        }
+        const inSwarm = !!(cur.assignedToProblemId || cur.parentAgentId)
+        if (!inSwarm) {
+          return list.map((x) => (x.id === cardId ? { ...x, x: nx, y: ny } : x))
+        }
+        let anchor: WorkflowCard | undefined
+        let siblings: WorkflowCard[]
+        if (cur.parentAgentId) {
+          anchor = list.find((p) => p.id === cur.parentAgentId && p.kind === 'agent')
+          siblings = list.filter(
+            (a) =>
+              a.kind === 'agent' &&
+              a.parentAgentId === cur.parentAgentId &&
+              a.id !== cardId,
+          )
+        } else if (cur.assignedToProblemId) {
+          const pid = cur.assignedToProblemId
+          anchor = list.find((p) => p.id === pid && p.kind === 'problem')
+          siblings = list.filter(
+            (a) =>
+              a.kind === 'agent' &&
+              a.assignedToProblemId === pid &&
+              !a.parentAgentId &&
+              a.id !== cardId,
+          )
+        } else {
+          return list.map((x) => (x.id === cardId ? { ...x, x: nx, y: ny } : x))
+        }
+        if (!anchor) {
+          return list.map((x) => (x.id === cardId ? { ...x, x: nx, y: ny } : x))
+        }
+        const { x, y } = magneticKanbanDockPosition(nx, ny, cur, anchor, siblings)
+        return list.map((x0) => (x0.id === cardId ? { ...x0, x, y } : x0))
+      })
+    },
+    [selectedIds],
+  )
+
+  const finishCardDrag = useCallback(
+    (cardId: string) => {
+      const draggedIds =
+        selectedIds.length > 1 && selectedIds.includes(cardId) ? selectedIds : [cardId]
+      for (const draggedId of draggedIds) {
+        const dragged = cardsRef.current.find((card) => card.id === draggedId)
+        if (dragged?.kind === 'agent') {
+          resolveAgentAssignment(draggedId)
+        }
+      }
+    },
+    [resolveAgentAssignment, selectedIds],
+  )
+
   return (
     <div className="freeform-root">
       <header className="freeform-toolbar freeform-toolbar--minimal">
@@ -1457,46 +1530,7 @@ export default function BoardView() {
                   })
                 })
               }
-              onMove={(nx, ny) =>
-                setCards((list) => {
-                  const cur = list.find((x) => x.id === c.id)
-                  if (!cur || cur.kind !== 'agent') {
-                    return list.map((x) => (x.id === c.id ? { ...x, x: nx, y: ny } : x))
-                  }
-                  const inSwarm = !!(cur.assignedToProblemId || cur.parentAgentId)
-                  if (!inSwarm) {
-                    return list.map((x) => (x.id === c.id ? { ...x, x: nx, y: ny } : x))
-                  }
-                  let anchor: WorkflowCard | undefined
-                  let siblings: WorkflowCard[]
-                  if (cur.parentAgentId) {
-                    anchor = list.find((p) => p.id === cur.parentAgentId && p.kind === 'agent')
-                    siblings = list.filter(
-                      (a) =>
-                        a.kind === 'agent' &&
-                        a.parentAgentId === cur.parentAgentId &&
-                        a.id !== c.id,
-                    )
-                  } else if (cur.assignedToProblemId) {
-                    const pid = cur.assignedToProblemId
-                    anchor = list.find((p) => p.id === pid && p.kind === 'problem')
-                    siblings = list.filter(
-                      (a) =>
-                        a.kind === 'agent' &&
-                        a.assignedToProblemId === pid &&
-                        !a.parentAgentId &&
-                        a.id !== c.id,
-                    )
-                  } else {
-                    return list.map((x) => (x.id === c.id ? { ...x, x: nx, y: ny } : x))
-                  }
-                  if (!anchor) {
-                    return list.map((x) => (x.id === c.id ? { ...x, x: nx, y: ny } : x))
-                  }
-                  const { x, y } = magneticKanbanDockPosition(nx, ny, cur, anchor, siblings)
-                  return list.map((x0) => (x0.id === c.id ? { ...x0, x, y } : x0))
-                })
-              }
+              onMove={(nx, ny) => moveCardSelection(c.id, nx, ny)}
               onResize={(nw, nh) =>
                 setCards((list) => {
                   const cur = list.find((x) => x.id === c.id)
@@ -1532,7 +1566,7 @@ export default function BoardView() {
                 })
               }
               onDragEnd={() => {
-                if (c.kind === 'agent') resolveAgentAssignment(c.id)
+                finishCardDrag(c.id)
               }}
               onToggleExpand={() =>
                 setCards((list) => {
@@ -1552,7 +1586,13 @@ export default function BoardView() {
                 })
               }
               onReleaseNod={onReleaseNod}
-              onMarkUserMovingCard={() => markUserMovingCard(c.id)}
+              onMarkUserMovingCard={() => {
+                const movingIds =
+                  selectedIds.length > 1 && selectedIds.includes(c.id) ? selectedIds : [c.id]
+                for (const movingId of movingIds) {
+                  markUserMovingCard(movingId)
+                }
+              }}
               onCardPointerSession={beginCardPointerSession}
               onTrace={pushSelectionTrace}
               onMakeAgentReadable={
@@ -1767,6 +1807,10 @@ function WorkflowCardView({
     const el = pointerEventTargetEl(e)
     if (shouldIgnoreSelectTarget(el)) {
       onTrace?.('card.pointerdown.capture', `${card.id} ignored target`)
+      return
+    }
+    if (selected && !e.shiftKey) {
+      onTrace?.('card.pointerdown.capture', `${card.id} keep selection`)
       return
     }
     onTrace?.('card.pointerdown.capture', `${card.id}${e.shiftKey ? ' shift' : ''}`)
