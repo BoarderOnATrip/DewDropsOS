@@ -551,14 +551,15 @@ export default function BoardView() {
             .filter((c) => worldRectsIntersect(cardWorldBounds(c), wr))
             .map((c) => c.id)
           pushSelectionTrace('marquee.complete', hits.length > 0 ? hits.join(', ') : 'no hits')
-          flushSync(() => {
-            setSelectedIds((prev) =>
-              e.shiftKey ? [...new Set([...prev, ...hits])] : hits,
-            )
-          })
-        } else if (!e.shiftKey) {
-          pushSelectionTrace('marquee.clear', 'cleared selection')
-          flushSync(() => setSelectedIds([]))
+          if (hits.length > 0) {
+            flushSync(() => {
+              setSelectedIds((prev) =>
+                e.shiftKey ? [...new Set([...prev, ...hits])] : hits,
+              )
+            })
+          }
+        } else {
+          pushSelectionTrace('marquee.preserve', 'kept selection')
         }
       }
       setMarquee(null)
