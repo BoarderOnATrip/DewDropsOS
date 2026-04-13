@@ -15,7 +15,7 @@
 
 | Area | Rationale |
 |------|------------|
-| **Pure TS extraction** from `BoardView.tsx` → `src/freeform/*.ts` (layout, overlap, assignment helpers) | Shrinks merge target; easy to test in isolation. |
+| **Pure TS extraction** from `BoardView.tsx` → `src/freeform/*.ts` (layout, overlap, assignment helpers) | Shrinks merge target; easy to test in isolation. *(Done so far: `kanbanGeometry`, `viewportGeometry`, `problemOverlapEjection` + matching `*.test.ts`.)* |
 | **Unit tests** (`*.test.ts`), **Vitest** config, **CI** workflows | Keeps Codex free for feature wiring. |
 | **ESLint / tsconfig** hygiene that applies repo-wide | Low product opinion, high consistency. |
 | **Accessibility** (keyboard, `aria-*`, focus) on existing UI | Incremental, review-friendly patches. |

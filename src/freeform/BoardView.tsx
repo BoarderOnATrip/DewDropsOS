@@ -25,6 +25,14 @@ import {
   stringifyBoard,
   type PersistedBoardV1,
 } from './persistBoard'
+import { cardDisplayHeight, layoutKanbanStrip, magneticKanbanDockPosition } from './kanbanGeometry'
+import { stepProblemOverlapEjection } from './problemOverlapEjection'
+import {
+  cardWorldBounds,
+  marqueeViewportToWorldAabb,
+  worldRectsIntersect,
+  zoomAtPoint,
+} from './viewportGeometry'
 import './board.css'
 
 let cardId = 0
@@ -33,16 +41,21 @@ function newCardId(): string {
   return `wf-${cardId}`
 }
 
-function cardDisplayHeight(c: WorkflowCard): number {
-  return c.expanded ? c.height : 44
-}
-
 /** `pointerdown`/`mousedown` target is often a Text node — it has no `.closest`. */
 function pointerEventTargetEl(e: { target: EventTarget | null }): Element | null {
   const n = e.target
   if (n instanceof Element) return n
   if (n instanceof Text) return n.parentElement
   return null
+}
+
+function eventPathHitsBoardCard(path: EventTarget[] | undefined): boolean {
+  if (!path) return false
+  return path.some(
+    (node) =>
+      node instanceof Element &&
+      (node.classList.contains('freeform-card') || node.hasAttribute('data-board-card')),
+  )
 }
 
 /**
@@ -57,78 +70,6 @@ const ENVELOPE_STAY_SLACK = 48
 
 /** Visual padding for the drawn water envelope stroke (world px). */
 const ENVELOPE_VISUAL_PAD = 12
-
-/** Kanban strip under the hub + magnetic interaction (world px). */
-const KANBAN_GAP = 14
-/** Horizontal inset from hub/parent edges; 0 so the lineup matches the anchor width edge-to-edge. */
-const KANBAN_INSET = 0
-/** Reflow won’t pack more agents per row than fit at this minimum width (matches resize floor). */
-const KANBAN_MIN_AGENT_WIDTH = 120
-const MAG_GRID = 12
-const MAG_EDGE = 16
-
-function kanbanInnerTrackWidth(anchorWidth: number): number {
-  return Math.max(0, anchorWidth - 2 * KANBAN_INSET)
-}
-
-/** Largest k such that k agents each ≥ minW fit in track with gaps. */
-function kanbanMaxAgentsPerRow(track: number, gap: number, minW: number): number {
-  if (track <= 0) return 1
-  const k = Math.floor((track + gap) / (minW + gap))
-  return Math.max(1, k)
-}
-
-/** Integer widths summing to track − (n−1)·gap (remainder spread across first cells). */
-function distributeKanbanCellWidths(n: number, track: number, gap: number): number[] {
-  if (n <= 0) return []
-  const gapTotal = (n - 1) * gap
-  const totalW = Math.max(0, track - gapTotal)
-  const base = Math.floor(totalW / n)
-  const extra = totalW - base * n
-  return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0))
-}
-
-type KanbanCellLayout = { x: number; y: number; width: number }
-
-/** Equal-fill rows under a hub or parent agent: row span matches anchor width (symmetric insets). */
-function layoutKanbanStrip(
-  rowAgents: WorkflowCard[],
-  anchorX: number,
-  anchorWidth: number,
-  anchorContentBottomY: number,
-): Map<string, KanbanCellLayout> {
-  const track = kanbanInnerTrackWidth(anchorWidth)
-  const startX = anchorX + KANBAN_INSET
-  let y = anchorContentBottomY + KANBAN_GAP
-  const maxPer = kanbanMaxAgentsPerRow(track, KANBAN_GAP, KANBAN_MIN_AGENT_WIDTH)
-
-  const rowCounts: number[] = []
-  let rem = rowAgents.length
-  while (rem > 0) {
-    const k = Math.min(rem, maxPer)
-    rowCounts.push(k)
-    rem -= k
-  }
-
-  const out = new Map<string, KanbanCellLayout>()
-  let idx = 0
-  for (const rc of rowCounts) {
-    const slice = rowAgents.slice(idx, idx + rc)
-    idx += rc
-    const widths = distributeKanbanCellWidths(rc, track, KANBAN_GAP)
-    let x = startX
-    let rowH = 0
-    for (let i = 0; i < slice.length; i++) {
-      const a = slice[i]
-      const w = widths[i]
-      out.set(a.id, { x, y, width: w })
-      rowH = Math.max(rowH, cardDisplayHeight(a))
-      x += w + KANBAN_GAP
-    }
-    y += rowH + KANBAN_GAP
-  }
-  return out
-}
 
 function swarmMassForProblem(
   problemId: string,
@@ -259,40 +200,6 @@ function reflowHubKanbanLayout(cards: WorkflowCard[], problemId: string): Workfl
     if (!pr) return c
     return { ...c, x: pr.x, y: pr.y, width: pr.width }
   })
-}
-
-/** Dock strip under a problem hub or a parent agent (subagents). */
-function magneticKanbanDockPosition(
-  nx: number,
-  ny: number,
-  agent: WorkflowCard,
-  anchor: WorkflowCard,
-  siblings: WorkflowCard[],
-): { x: number; y: number } {
-  let x = Math.round(nx / MAG_GRID) * MAG_GRID
-  let y = Math.round(ny / MAG_GRID) * MAG_GRID
-  const ah = cardDisplayHeight(agent)
-  const aw = agent.width
-  const ph = cardDisplayHeight(anchor)
-
-  const dockY = anchor.y + ph + KANBAN_GAP
-  if (Math.abs(y - dockY) <= MAG_EDGE * 2) y = dockY
-
-  const alignLeft = anchor.x + KANBAN_INSET
-  if (Math.abs(x - alignLeft) <= MAG_EDGE * 2) x = alignLeft
-
-  for (const s of siblings) {
-    const sh = cardDisplayHeight(s)
-    if (Math.abs(x - s.x) <= MAG_EDGE) x = s.x
-    if (Math.abs(x + aw - (s.x + s.width)) <= MAG_EDGE) x = s.x + s.width - aw
-    if (Math.abs(x + aw - s.x) <= MAG_EDGE) x = s.x - aw
-    if (Math.abs(x - (s.x + s.width)) <= MAG_EDGE) x = s.x + s.width
-    if (Math.abs(y - s.y) <= MAG_EDGE) y = s.y
-    if (Math.abs(y + ah - (s.y + sh)) <= MAG_EDGE) y = s.y + sh - ah
-    if (Math.abs(y + ah - s.y) <= MAG_EDGE) y = s.y - ah
-  }
-
-  return { x, y }
 }
 
 /** Explicit card.openQuestions plus structural opens (e.g. isolated problem hub). */
@@ -499,165 +406,6 @@ function descendantHasOpenQuestions(
     if (descendantHasOpenQuestions(c.id, cards, wires)) return true
   }
   return false
-}
-
-function zoomAtPoint(
-  cam: BoardCamera,
-  vw: number,
-  vh: number,
-  sx: number,
-  sy: number,
-  factor: number,
-): BoardCamera {
-  const z = Math.max(0.12, Math.min(2.8, cam.zoom * factor))
-  const worldX = (sx - vw / 2) / cam.zoom + cam.x
-  const worldY = (sy - vh / 2) / cam.zoom + cam.y
-  return {
-    zoom: z,
-    x: worldX - (sx - vw / 2) / z,
-    y: worldY - (sy - vh / 2) / z,
-  }
-}
-
-function screenToWorldFlat(
-  sx: number,
-  sy: number,
-  vw: number,
-  vh: number,
-  cam: BoardCamera,
-): { x: number; y: number } {
-  return {
-    x: (sx - vw / 2) / cam.zoom + cam.x,
-    y: (sy - vh / 2) / cam.zoom + cam.y,
-  }
-}
-
-/** Viewport-axis-aligned marquee → world AABB (handles rotation-free camera). */
-function marqueeViewportToWorldAabb(
-  vx: number,
-  vy: number,
-  wv: number,
-  hv: number,
-  vw: number,
-  vh: number,
-  cam: BoardCamera,
-): { l: number; t: number; r: number; b: number } {
-  const pts = [
-    screenToWorldFlat(vx, vy, vw, vh, cam),
-    screenToWorldFlat(vx + wv, vy, vw, vh, cam),
-    screenToWorldFlat(vx + wv, vy + hv, vw, vh, cam),
-    screenToWorldFlat(vx, vy + hv, vw, vh, cam),
-  ]
-  return {
-    l: Math.min(...pts.map((p) => p.x)),
-    r: Math.max(...pts.map((p) => p.x)),
-    t: Math.min(...pts.map((p) => p.y)),
-    b: Math.max(...pts.map((p) => p.y)),
-  }
-}
-
-function cardWorldBounds(c: WorkflowCard): { l: number; t: number; r: number; b: number } {
-  const h = cardDisplayHeight(c)
-  return { l: c.x, t: c.y, r: c.x + c.width, b: c.y + h }
-}
-
-function worldRectsIntersect(
-  a: { l: number; t: number; r: number; b: number },
-  b: { l: number; t: number; r: number; b: number },
-): boolean {
-  return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b)
-}
-
-/** World px/sec — cards not in the swarm drift off overlapping problem hubs. */
-const PROBLEM_OVERLAP_EJECT_SPEED = 48
-/** Tiny gap once overlap resolves so we don’t re-enter next frame. */
-const PROBLEM_EJECT_SLACK = 2
-/** Slight bias toward horizontal “slide to the side” vs vertical. */
-const PROBLEM_EJECT_SIDE_BIAS = 1.12
-
-function swarmAgentIdsForProblem(
-  problemId: string,
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-): Set<string> {
-  return new Set(agentsInProblemSwarm(problemId, cards, wires).map((a) => a.id))
-}
-
-/** Push mover out of fixedBounds along the shorter overlap axis (prefer sideways). */
-function problemOverlapEjectDelta(
-  mover: WorkflowCard,
-  moverX: number,
-  moverY: number,
-  fixedBounds: { l: number; t: number; r: number; b: number },
-  maxStep: number,
-): { dx: number; dy: number } {
-  const mb = {
-    l: moverX,
-    t: moverY,
-    r: moverX + mover.width,
-    b: moverY + cardDisplayHeight(mover),
-  }
-  if (!worldRectsIntersect(mb, fixedBounds)) return { dx: 0, dy: 0 }
-  const ox = Math.min(mb.r, fixedBounds.r) - Math.max(mb.l, fixedBounds.l)
-  const oy = Math.min(mb.b, fixedBounds.b) - Math.max(mb.t, fixedBounds.t)
-  if (ox <= 0 || oy <= 0) return { dx: 0, dy: 0 }
-  const preferSide = ox * PROBLEM_EJECT_SIDE_BIAS <= oy
-  if (preferSide) {
-    const mcx = (mb.l + mb.r) / 2
-    const fcx = (fixedBounds.l + fixedBounds.r) / 2
-    const sign = mcx >= fcx ? 1 : -1
-    return { dx: sign * Math.min(maxStep, ox + PROBLEM_EJECT_SLACK), dy: 0 }
-  }
-  const mcy = (mb.t + mb.b) / 2
-  const fcy = (fixedBounds.t + fixedBounds.b) / 2
-  const sign = mcy >= fcy ? 1 : -1
-  return { dx: 0, dy: sign * Math.min(maxStep, oy + PROBLEM_EJECT_SLACK) }
-}
-
-function stepProblemOverlapEjection(
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-  dtSec: number,
-  draggingIds: ReadonlySet<string>,
-): WorkflowCard[] {
-  const maxStep = PROBLEM_OVERLAP_EJECT_SPEED * dtSec
-  if (maxStep <= 0) return cards
-
-  const problems = cards.filter((c) => c.kind === 'problem')
-  if (problems.length === 0) return cards
-
-  const pos = new Map<string, { x: number; y: number }>()
-  for (const c of cards) pos.set(c.id, { x: c.x, y: c.y })
-
-  for (const p of problems) {
-    if (draggingIds.has(p.id)) continue
-    const pb = cardWorldBounds(p)
-    const swarm = swarmAgentIdsForProblem(p.id, cards, wires)
-
-    for (const c of cards) {
-      if (c.id === p.id) continue
-      if (swarm.has(c.id)) continue
-      if (draggingIds.has(c.id)) continue
-
-      const cur = pos.get(c.id)!
-      const d = problemOverlapEjectDelta(c, cur.x, cur.y, pb, maxStep)
-      if (d.dx !== 0 || d.dy !== 0) {
-        cur.x += d.dx
-        cur.y += d.dy
-      }
-    }
-  }
-
-  let changed = false
-  const next = cards.map((c) => {
-    const p = pos.get(c.id)!
-    if (p.x !== c.x || p.y !== c.y) {
-      changed = true
-      return { ...c, x: p.x, y: p.y }
-    }
-    return c
-  })
-  return changed ? next : cards
 }
 
 function touchPairMetrics(
@@ -1007,8 +755,18 @@ export default function BoardView() {
   const onViewportPointerDown = (e: React.PointerEvent) => {
     const el = pointerEventTargetEl(e)
     if (!el) return
+    const nativePath =
+      typeof e.nativeEvent.composedPath === 'function'
+        ? e.nativeEvent.composedPath()
+        : undefined
     /** React 19 may deliver parent handlers before child stopPropagation runs — never steal card hits. */
-    if (el.closest('.freeform-card') || el.closest('[data-board-card]')) return
+    if (
+      eventPathHitsBoardCard(nativePath) ||
+      el.closest('.freeform-card') ||
+      el.closest('[data-board-card]')
+    ) {
+      return
+    }
     /** Grid is pointer-events:none; empty canvas usually hits `.freeform-world` (not the viewport node). */
     const onBoard =
       el === e.currentTarget ||
@@ -2090,6 +1848,7 @@ function WorkflowCardView({
     const el = pointerEventTargetEl(e)
     if (!el) return
     e.stopPropagation()
+    selectNow(e.shiftKey)
     onCardPointerSession?.()
     onMarkUserMovingCard?.()
     drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
@@ -2103,6 +1862,7 @@ function WorkflowCardView({
     const el = pointerEventTargetEl(e)
     if (!el) return
     e.stopPropagation()
+    selectNow(e.shiftKey)
     onCardPointerSession?.()
     onMarkUserMovingCard?.()
     if (el.closest('.freeform-agent-drag-handle') && agentDragHandleRef.current) {
@@ -2115,7 +1875,7 @@ function WorkflowCardView({
     flushSync(() => onSelect(shiftKey))
   }
 
-  /** Runs in capture phase so it wins over React 19 root ordering and viewport marquee stealing. */
+  /** Keep selection explicit and avoid duplicate pointer/mouse capture toggles. */
   const shouldIgnoreSelectTarget = (el: Element | null) => {
     if (!el) return true
     if (el.closest('button, a, [role="button"]')) return true
@@ -2123,19 +1883,11 @@ function WorkflowCardView({
     return false
   }
 
-  const onCardPointerDownCapture = (e: React.PointerEvent) => {
+  const onCardClickCapture = (e: React.MouseEvent) => {
     if (e.button !== 0) return
     const el = pointerEventTargetEl(e)
     if (shouldIgnoreSelectTarget(el)) return
-    onCardPointerSession?.()
-    selectNow(e.shiftKey)
-  }
-
-  const onCardMouseDownCapture = (e: React.MouseEvent) => {
-    if (e.button !== 0) return
-    const el = pointerEventTargetEl(e)
-    if (shouldIgnoreSelectTarget(el)) return
-    onCardPointerSession?.()
+    e.stopPropagation()
     selectNow(e.shiftKey)
   }
 
@@ -2264,8 +2016,7 @@ function WorkflowCardView({
         width: card.width,
         height: card.expanded ? card.height : 44,
       }}
-      onPointerDownCapture={onCardPointerDownCapture}
-      onMouseDownCapture={onCardMouseDownCapture}
+      onClickCapture={onCardClickCapture}
       onPointerDown={(e) => {
         e.stopPropagation()
       }}
