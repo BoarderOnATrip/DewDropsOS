@@ -16,6 +16,7 @@ import {
   stopSwarmRun,
   type ButlerBridgeHealth,
   type ButlerBridgeSettings,
+  type ButlerSwarmRunAgent,
   type ButlerSwarmRun,
   type ButlerSwarmRunReport,
   type ButlerSwarmTemplate,
@@ -41,6 +42,7 @@ import { reflowHubKanbanLayout, reflowSubagentLayout } from './kanbanReflow'
 import { openQuestionsForCard } from './openQuestions'
 import { applyReleaseNod } from './releaseNod'
 import { clampNumber, swarmRunIsActive } from './runFormat'
+import { buildSwarmContractAgents } from './swarmContractAgents'
 import {
   ENVELOPE_STAY_SLACK,
   DEFAULT_SWARM_ENVELOPE_PAD,
@@ -870,6 +872,21 @@ export default function BoardView() {
     return next
   }, [cards, recentRuns])
 
+  const latestAgentRunStateByCardId = useMemo(() => {
+    const next = new Map<string, ButlerSwarmRunAgent>()
+    for (const run of latestProblemRunById.values()) {
+      for (const state of run.agent_states ?? []) {
+        const mappedCardId =
+          (typeof state.metadata?.dewdrops_card_id === 'string' ? state.metadata.dewdrops_card_id : '') ||
+          state.agent_id
+        if (mappedCardId) {
+          next.set(mappedCardId, state)
+        }
+      }
+    }
+    return next
+  }, [latestProblemRunById])
+
   useEffect(() => {
     if (!selectedProblem) {
       setCurrentRunId('')
@@ -1023,6 +1040,12 @@ export default function BoardView() {
         title: selectedProblem.title,
         objective: launchObjective.trim(),
         template: launchTemplate,
+        agents: buildSwarmContractAgents(
+          selectedProblem,
+          selectedProblemAgents,
+          launchTemplate,
+          launchObjective.trim(),
+        ),
         room_id: selectedProblem.butlerRoomId,
         room_kind: 'project',
         target: 'local_desktop',
@@ -1624,6 +1647,10 @@ export default function BoardView() {
                 c.kind === 'problem'
                   ? latestProblemRunById.get(c.id)?.run_id || latestProblemRunById.get(c.id)?.id
                   : undefined
+              }
+              agentRunStatus={c.kind === 'agent' ? latestAgentRunStateByCardId.get(c.id)?.status : undefined}
+              agentRunSummary={
+                c.kind === 'agent' ? latestAgentRunStateByCardId.get(c.id)?.result_summary : undefined
               }
               onSelect={(shiftKey) =>
                 flushSync(() => {

@@ -8,16 +8,16 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   globalIgnores(['dist']),
   {
-    files: ['**/*.test.ts'],
+    files: ['**/*.{test.ts,test.tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2020,
-      globals: globals.node,
+      globals: { ...globals.node, ...globals.vitest },
     },
   },
   {
     files: ['**/*.{ts,tsx}'],
-    ignores: ['**/*.test.ts'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,

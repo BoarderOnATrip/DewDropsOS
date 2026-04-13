@@ -19,6 +19,8 @@ export type CardViewProps = {
   problemRunStatus?: string
   problemRunSummary?: string
   problemRunId?: string
+  agentRunStatus?: string
+  agentRunSummary?: string
   onSelect: (shiftKey?: boolean) => void
   onMove: (x: number, y: number) => void
   onResize: (width: number, height: number) => void
@@ -45,6 +47,8 @@ export function WorkflowCardView({
   problemRunStatus,
   problemRunSummary,
   problemRunId,
+  agentRunStatus,
+  agentRunSummary,
   onSelect,
   onMove,
   onResize,
@@ -308,6 +312,11 @@ export function WorkflowCardView({
             <span className={titleFrameClass}>
               <span className="freeform-card-title">{card.title}</span>
             </span>
+            {agentRunStatus ? (
+              <span className={`freeform-run-pill${swarmRunIsActive(agentRunStatus) ? ' is-active' : ''}`}>
+                {formatRunStatus(agentRunStatus)}
+              </span>
+            ) : null}
             {selected ? <span className="freeform-selection-badge">Selected</span> : null}
             {subagentCount > 0 ? (
               <span
@@ -455,6 +464,15 @@ export function WorkflowCardView({
             </>
           ) : card.kind === 'agent' ? (
             <>
+              {agentRunStatus ? (
+                <div className="freeform-agent-run-summary">
+                  <div className="freeform-problem-run-summary-head">
+                    <strong>Current run</strong>
+                    <span>{formatRunStatus(agentRunStatus)}</span>
+                  </div>
+                  <p>{agentRunSummary || 'Runtime state is attached to this marble.'}</p>
+                </div>
+              ) : null}
               <OpenQuestionsBlock items={opens} />
               <p style={{ margin: '0 0 8px' }}>
                 {card.parentAgentId

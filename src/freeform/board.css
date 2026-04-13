@@ -1292,6 +1292,24 @@
   color: rgba(235, 241, 247, 0.82);
 }
 
+.freeform-agent-run-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(52, 199, 89, 0.16);
+  background: rgba(52, 199, 89, 0.08);
+}
+
+.freeform-agent-run-summary p {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: rgba(235, 241, 247, 0.82);
+}
+
 .freeform-card-body {
   flex: 1;
   padding: 12px;

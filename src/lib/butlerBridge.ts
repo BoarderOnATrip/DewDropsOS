@@ -40,9 +40,11 @@ export type ButlerSwarmContract = {
 export type ButlerSwarmRunAgent = {
   agent_id: string
   title: string
+  role?: string
   status?: string
   result_summary?: string
   error?: string
+  metadata?: Record<string, unknown>
 }
 
 export type ButlerSwarmRun = {
@@ -81,6 +83,16 @@ export type CreateSwarmContractInput = {
   title: string
   objective: string
   template: ButlerSwarmTemplate
+  agents?: Array<{
+    id: string
+    title: string
+    role: string
+    objective: string
+    depends_on?: string[]
+    max_iterations?: number
+    tool_hints?: string[]
+    metadata?: Record<string, unknown>
+  }>
   room_id?: string
   room_kind?: string
   target?: string
@@ -192,6 +204,7 @@ export async function createSwarmContract(
       room_kind: payload.room_kind ?? 'project',
       target: payload.target ?? 'local_desktop',
       launcher: payload.launcher ?? 'desktop',
+      agents: payload.agents ?? [],
       metadata: payload.metadata ?? {},
       source_refs: payload.source_refs ?? [],
       created_by: payload.created_by ?? 'dewdrops',
