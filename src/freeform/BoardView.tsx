@@ -43,6 +43,7 @@ import { openQuestionsForCard } from './openQuestions'
 import { applyReleaseNod } from './releaseNod'
 import { clampNumber, swarmRunIsActive } from './runFormat'
 import { buildSwarmContractAgents } from './swarmContractAgents'
+import { shouldDraggedAgentStayAttached } from './dragDetach'
 import {
   ENVELOPE_STAY_SLACK,
   DEFAULT_SWARM_ENVELOPE_PAD,
@@ -1162,17 +1163,65 @@ export default function BoardView() {
         const cur = list.find((x) => x.id === cardId)
         if (!cur) return list
 
+        const clearDraggedAssignments = (
+          nextCards: WorkflowCard[],
+          movingIds: ReadonlySet<string>,
+        ): WorkflowCard[] => {
+          const detachedProblemIds = new Set<string>()
+          const detachedParentIds = new Set<string>()
+          const detachIds = new Set<string>()
+          for (const item of nextCards) {
+            if (item.kind !== 'agent' || !movingIds.has(item.id)) continue
+            if (
+              shouldDraggedAgentStayAttached(
+                item,
+                item.x,
+                item.y,
+                nextCards,
+                wiresRef.current,
+                movingIds,
+              )
+            ) {
+              continue
+            }
+            if (item.assignedToProblemId) detachedProblemIds.add(item.assignedToProblemId)
+            if (item.parentAgentId) detachedParentIds.add(item.parentAgentId)
+            detachIds.add(item.id)
+          }
+          if (detachIds.size === 0) return nextCards
+
+          let detached = nextCards.map((item) =>
+            item.kind === 'agent' && detachIds.has(item.id)
+              ? {
+                  ...item,
+                  assignedToProblemId: null,
+                  parentAgentId: null,
+                  releaseNodFromLead: false,
+                  releaseNodFromSpecialist: false,
+                }
+              : item,
+          )
+          for (const problemId of detachedProblemIds) {
+            detached = reflowHubKanbanLayout(detached, problemId)
+          }
+          for (const parentId of detachedParentIds) {
+            detached = reflowSubagentLayout(detached, parentId)
+          }
+          return detached
+        }
+
         const draggingSelection = selectedIds.length > 1 && selectedIds.includes(cardId)
         if (draggingSelection) {
           const dx = nx - cur.x
           const dy = ny - cur.y
           if (dx === 0 && dy === 0) return list
           const movingIds = new Set(selectedIds)
-          return list.map((item) =>
+          const moved = list.map((item) =>
             movingIds.has(item.id)
               ? { ...item, x: item.x + dx, y: item.y + dy }
               : item,
           )
+          return clearDraggedAssignments(moved, movingIds)
         }
 
         if (cur.kind !== 'agent') {
@@ -1181,6 +1230,31 @@ export default function BoardView() {
         const inSwarm = !!(cur.assignedToProblemId || cur.parentAgentId)
         if (!inSwarm) {
           return list.map((x) => (x.id === cardId ? { ...x, x: nx, y: ny } : x))
+        }
+        const movingIds = new Set([cardId])
+        if (
+          !shouldDraggedAgentStayAttached(cur, nx, ny, list, wiresRef.current, movingIds)
+        ) {
+          let detached = list.map((item) =>
+            item.id === cardId && item.kind === 'agent'
+              ? {
+                  ...item,
+                  x: nx,
+                  y: ny,
+                  assignedToProblemId: null,
+                  parentAgentId: null,
+                  releaseNodFromLead: false,
+                  releaseNodFromSpecialist: false,
+                }
+              : item,
+          )
+          if (cur.parentAgentId) {
+            detached = reflowSubagentLayout(detached, cur.parentAgentId)
+          }
+          if (cur.assignedToProblemId) {
+            detached = reflowHubKanbanLayout(detached, cur.assignedToProblemId)
+          }
+          return detached
         }
         let anchor: WorkflowCard | undefined
         let siblings: WorkflowCard[]
@@ -1728,33 +1802,6 @@ export default function BoardView() {
               }}
               onCardPointerSession={beginCardPointerSession}
               onTrace={pushSelectionTrace}
-              onMakeAgentReadable={
-                c.kind === 'agent'
-                  ? () => {
-                      const AGENT_READ_MIN_W = 288
-                      const AGENT_READ_MIN_H = 272
-                      setCards((list) => {
-                        let next = list.map((x) =>
-                          x.id === c.id && x.kind === 'agent'
-                            ? {
-                                ...x,
-                                expanded: true,
-                                width: Math.max(x.width, AGENT_READ_MIN_W),
-                                height: Math.max(x.height, AGENT_READ_MIN_H),
-                              }
-                            : x,
-                        )
-                        const agent = next.find((x) => x.id === c.id && x.kind === 'agent')
-                        if (agent?.parentAgentId) {
-                          next = reflowSubagentLayout(next, agent.parentAgentId)
-                        } else if (agent?.assignedToProblemId) {
-                          next = reflowHubKanbanLayout(next, agent.assignedToProblemId)
-                        }
-                        return next
-                      })
-                    }
-                  : undefined
-              }
             />
           ))}
         </div>

@@ -27,8 +27,6 @@ export type CardViewProps = {
   onDragEnd: () => void
   onToggleExpand: () => void
   onReleaseNod: (agentId: string, which: 'specialist' | 'lead') => void
-  /** Agent only: expand + grow body for reading when user clicks the body (not header). */
-  onMakeAgentReadable?: () => void
   /** Pause hub overlap ejection while this card is being moved or resized. */
   onMarkUserMovingCard?: () => void
   /** First contact on card — pause overlap sim before drag/selection handlers run. */
@@ -55,7 +53,6 @@ export function WorkflowCardView({
   onDragEnd,
   onToggleExpand,
   onReleaseNod,
-  onMakeAgentReadable,
   onMarkUserMovingCard,
   onCardPointerSession,
   onTrace,
@@ -69,7 +66,6 @@ export function WorkflowCardView({
     source: 'header' | 'body'
   } | null>(null)
   const resize = useRef<{ sx: number; sy: number; w: number; h: number } | null>(null)
-  const agentDragHandleRef = useRef<HTMLDivElement>(null)
   const DRAG_START_SLOP = 3
 
   const beginDrag = (
@@ -91,17 +87,17 @@ export function WorkflowCardView({
   }
 
   const onAgentBodyPointerDown = (e: PointerEvent) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || resize.current) return
     const el = pointerEventTargetEl(e)
     if (!el) return
     if (el.closest('button, a, [role="button"]')) return
     onTrace?.('card.body.pointerdown', `${card.id} body`)
     e.stopPropagation()
-    if (selected) {
-      beginDrag(e, 'body', e.currentTarget as HTMLElement)
-      return
+    if (e.shiftKey) return
+    if (!selected) {
+      selectNow(false)
     }
-    onMakeAgentReadable?.()
+    beginDrag(e, 'body', e.currentTarget as HTMLElement)
   }
 
   /** Problem / surface: whole header drags; selection comes from card capture. */
@@ -111,6 +107,7 @@ export function WorkflowCardView({
     if (!el) return
     onTrace?.('card.header.pointerdown', `${card.id} header`)
     e.stopPropagation()
+    if (e.shiftKey) return
     beginDrag(e, 'header', e.currentTarget as HTMLElement)
   }
 
@@ -120,9 +117,11 @@ export function WorkflowCardView({
     if (!el) return
     onTrace?.('card.agentHeader.pointerdown', `${card.id} agent-header`)
     e.stopPropagation()
-    if (el.closest('.freeform-agent-drag-handle') && agentDragHandleRef.current) {
-      beginDrag(e, 'header', agentDragHandleRef.current)
+    if (e.shiftKey) return
+    if (!selected) {
+      selectNow(false)
     }
+    beginDrag(e, 'header', e.currentTarget as HTMLElement)
   }
 
   const selectNow = (shiftKey?: boolean) => {
@@ -172,10 +171,6 @@ export function WorkflowCardView({
     if (!activeDrag) return
     if (activeDrag.moved) {
       onDragEnd()
-      return
-    }
-    if (activeDrag.source === 'body') {
-      onMakeAgentReadable?.()
     }
   }
 
@@ -300,13 +295,15 @@ export function WorkflowCardView({
       }}
     >
       {card.kind === 'agent' ? (
-        <div className="freeform-card-header freeform-card-header--agent" onPointerDown={onAgentHeaderPointerDown}>
+        <div
+          className="freeform-card-header freeform-card-header--agent"
+          onPointerDown={onAgentHeaderPointerDown}
+          onPointerMove={onHeaderPointerMove}
+          onPointerUp={onHeaderPointerUp}
+          onPointerCancel={onHeaderPointerUp}
+        >
           <div
-            ref={agentDragHandleRef}
             className="freeform-agent-drag-handle"
-            onPointerMove={onHeaderPointerMove}
-            onPointerUp={onHeaderPointerUp}
-            onPointerCancel={onHeaderPointerUp}
           >
             <span className="freeform-card-dot" style={{ background: card.color }} />
             <span className={titleFrameClass}>
@@ -539,7 +536,7 @@ export function WorkflowCardView({
           )}
           <p style={{ margin: '10px 0 0', fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>
             {card.kind === 'agent'
-              ? 'Drag the top strip to move. Once selected, you can drag from the body too. Tap the body to open it up. Double-click to collapse.'
+              ? 'Drag anywhere on the marble to move it. Double-click to expand or collapse.'
               : 'Drag the header to move. Double-click to collapse.'}
           </p>
         </div>

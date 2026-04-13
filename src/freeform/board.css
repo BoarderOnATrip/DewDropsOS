@@ -1157,7 +1157,7 @@
 }
 
 .freeform-card-header--agent {
-  cursor: default;
+  cursor: grab;
 }
 
 .freeform-agent-drag-handle {
@@ -1320,8 +1320,8 @@
 }
 
 .freeform-card-body--agent {
-  cursor: default;
-  user-select: text;
+  cursor: grab;
+  user-select: none;
 }
 
 .freeform-card.collapsed .freeform-card-body {
@@ -1375,4 +1375,82 @@
   border-radius: 2px;
   transform: translate(-50%, -50%);
   opacity: 0.85;
+}
+
+/* Keep runtime state legible without perpetual shimmer. */
+.freeform-swarm-envelope-rect,
+.freeform-card.has-open-questions,
+.freeform-card.kind-problem.freeform-problem-bubble,
+.freeform-card.kind-problem.freeform-problem-bubble.has-open-questions,
+.freeform-card.kind-problem.freeform-problem-swarm-active:not(.freeform-problem-bubble):not(
+    .has-open-questions
+  ),
+.freeform-card.kind-agent.freeform-agent-swarm-linked,
+.freeform-card.kind-agent.freeform-agent-glow-prepared,
+.freeform-card.kind-agent.freeform-agent-glow-working,
+.freeform-card.kind-agent.freeform-agent-glow-questions,
+.freeform-card.kind-agent.freeform-agent-glow-prepared.selected,
+.freeform-card.kind-agent.freeform-agent-glow-working.selected,
+.freeform-card.kind-agent.freeform-agent-glow-questions.selected,
+.freeform-open-questions,
+.freeform-card.kind-agent.freeform-agent-glow-questions .freeform-open-questions,
+.freeform-open-pin-agent {
+  animation: none;
+}
+
+.freeform-swarm-envelope-rect {
+  stroke: rgba(185, 220, 255, 0.34);
+  opacity: 0.94;
+}
+
+.freeform-card.kind-problem.freeform-problem-bubble {
+  border-radius: 40% 40% 42% 42% / 42% 40% 44% 42%;
+}
+
+.freeform-card.has-open-questions {
+  box-shadow:
+    0 0 0 1px rgba(255, 165, 45, 0.42),
+    0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.freeform-open-questions {
+  background: rgba(255, 149, 0, 0.12);
+  border-color: rgba(255, 178, 72, 0.48);
+}
+
+.freeform-card.kind-agent.freeform-agent-swarm-linked {
+  background-position: 0 0, 50% 0;
+}
+
+.freeform-card.kind-agent.freeform-agent-glow-prepared {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(10, 132, 255, 0.34),
+    0 0 16px rgba(10, 132, 255, 0.2),
+    0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.freeform-card.kind-agent.freeform-agent-glow-working {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(52, 199, 89, 0.36),
+    0 0 18px rgba(52, 199, 89, 0.2),
+    0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.freeform-card.kind-agent.freeform-agent-glow-questions {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 0 0 1px rgba(255, 159, 10, 0.46),
+    0 0 18px rgba(255, 159, 10, 0.22),
+    0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.freeform-card.kind-agent.freeform-agent-glow-prepared.selected,
+.freeform-card.kind-agent.freeform-agent-glow-working.selected,
+.freeform-card.kind-agent.freeform-agent-glow-questions.selected {
+  box-shadow:
+    0 0 0 2px rgba(10, 132, 255, 0.22),
+    0 0 22px rgba(10, 132, 255, 0.26),
+    0 12px 40px rgba(0, 0, 0, 0.45);
 }
