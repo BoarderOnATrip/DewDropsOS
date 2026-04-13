@@ -1556,6 +1556,7 @@ export default function BoardView() {
               wires={wires}
               handshakeFocus={handshakeFocus}
               selected={selectedIds.includes(c.id)}
+              selectionSize={selectedIds.length}
               camera={camera}
               onSelect={(shiftKey) =>
                 flushSync(() => {
@@ -1736,6 +1737,7 @@ type CardViewProps = {
   wires: BoardWire[]
   handshakeFocus: { agentId: string; problemId: string } | null
   selected: boolean
+  selectionSize: number
   camera: BoardCamera
   onSelect: (shiftKey?: boolean) => void
   onMove: (x: number, y: number) => void
@@ -1773,6 +1775,7 @@ function WorkflowCardView({
   wires,
   handshakeFocus,
   selected,
+  selectionSize,
   camera,
   onSelect,
   onMove,
@@ -1796,6 +1799,13 @@ function WorkflowCardView({
     if (el.closest('button, a, [role="button"]')) return
     onTrace?.('card.body.pointerdown', `${card.id} body`)
     e.stopPropagation()
+    if (selected && selectionSize > 1) {
+      onCardPointerSession?.()
+      onMarkUserMovingCard?.()
+      drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      return
+    }
     onMakeAgentReadable?.()
   }
 
@@ -2053,6 +2063,9 @@ function WorkflowCardView({
         <div
           className={`freeform-card-body${card.kind === 'agent' ? ' freeform-card-body--agent' : ''}`}
           onPointerDown={card.kind === 'agent' ? onAgentBodyPointerDown : undefined}
+          onPointerMove={card.kind === 'agent' ? onHeaderPointerMove : undefined}
+          onPointerUp={card.kind === 'agent' ? onHeaderPointerUp : undefined}
+          onPointerCancel={card.kind === 'agent' ? onHeaderPointerUp : undefined}
         >
           {card.kind === 'problem' ? (
             <>
