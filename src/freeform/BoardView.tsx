@@ -11,6 +11,7 @@ import {
   loadButlerBridgeSettings,
   pairLocalBridge,
   saveButlerBridgeSettings,
+  sendUiTraceEvent,
   type ButlerBridgeHealth,
   type ButlerBridgeSettings,
   type ButlerSwarmRun,
@@ -25,12 +26,19 @@ import {
   stringifyBoard,
   type PersistedBoardV1,
 } from './persistBoard'
+import { buildProblemSwarmObjective } from './boardObjective'
+import { touchPairMetrics } from './boardTouch'
 import {
-  DEFAULT_KANBAN_MIN_AGENT_WIDTH,
-  cardDisplayHeight,
-  layoutKanbanStrip,
-  magneticKanbanDockPosition,
-} from './kanbanGeometry'
+  agentSubUnionBounds,
+  bestParentAgentTarget,
+  bestProblemOverlap,
+  countSubagents,
+} from './cardOverlap'
+import { DEFAULT_KANBAN_MIN_AGENT_WIDTH, cardDisplayHeight, magneticKanbanDockPosition } from './kanbanGeometry'
+import { reflowHubKanbanLayout, reflowSubagentLayout } from './kanbanReflow'
+import { descendantHasOpenQuestions, openQuestionsForCard } from './openQuestions'
+import { applyReleaseNod } from './releaseNod'
+import { clampNumber, formatRunStatus, swarmRunIsActive } from './runFormat'
 import {
   ENVELOPE_STAY_SLACK,
   DEFAULT_SWARM_ENVELOPE_PAD,
@@ -75,260 +83,6 @@ function eventPathHitsBoardCard(path: EventTarget[] | undefined): boolean {
   )
 }
 
-/** Assigned-only: row(s) under the hub; each row exactly fills hub inner width with equal tiles. */
-function reflowHubKanbanLayout(cards: WorkflowCard[], problemId: string): WorkflowCard[] {
-  const p = cards.find((c) => c.id === problemId && c.kind === 'problem')
-  if (!p) return cards
-  const assigned = cards
-    .filter(
-      (a) => a.kind === 'agent' && a.assignedToProblemId === problemId && !a.parentAgentId,
-    )
-    .sort((a, b) => {
-      if (a.y !== b.y) return a.y - b.y
-      if (a.x !== b.x) return a.x - b.x
-      return a.id.localeCompare(b.id)
-    })
-  if (assigned.length === 0) return cards
-
-  const ph = cardDisplayHeight(p)
-  const layouts = layoutKanbanStrip(
-    assigned,
-    p.x,
-    p.width,
-    p.y + ph,
-    p.swarmAgentMinWidth ?? DEFAULT_KANBAN_MIN_AGENT_WIDTH,
-  )
-
-  return cards.map((c) => {
-    if (c.kind !== 'agent' || c.assignedToProblemId !== problemId || c.parentAgentId) return c
-    const pr = layouts.get(c.id)
-    if (!pr) return c
-    return { ...c, x: pr.x, y: pr.y, width: pr.width }
-  })
-}
-
-/** Explicit card.openQuestions plus structural opens (e.g. isolated problem hub). */
-function applyReleaseNod(
-  list: WorkflowCard[],
-  agentId: string,
-  which: 'specialist' | 'lead',
-): { next: WorkflowCard[]; wireRemove?: { from: string; to: string } } {
-  const agent = list.find((c) => c.id === agentId && c.kind === 'agent')
-  if (!agent?.assignedToProblemId) return { next: list }
-
-  let next = list.map((c) => {
-    if (c.id !== agentId || c.kind !== 'agent') return c
-    if (which === 'specialist') {
-      return { ...c, releaseNodFromSpecialist: !c.releaseNodFromSpecialist }
-    }
-    return { ...c, releaseNodFromLead: !c.releaseNodFromLead }
-  })
-
-  const a = next.find((c) => c.id === agentId && c.kind === 'agent')
-  if (
-    !a ||
-    a.kind !== 'agent' ||
-    !a.assignedToProblemId ||
-    !a.releaseNodFromSpecialist ||
-    !a.releaseNodFromLead
-  ) {
-    return { next }
-  }
-
-  const pid = a.assignedToProblemId
-  const prob = next.find((p) => p.id === pid)
-  const recall = `Marble in the pool — recall: last sack was “${prob?.title ?? 'project'}”.`
-  next = next.map((c) =>
-    c.id === agentId && c.kind === 'agent'
-      ? {
-          ...c,
-          assignedToProblemId: null,
-          parentAgentId: null,
-          releaseNodFromSpecialist: false,
-          releaseNodFromLead: false,
-          lastProjectRecall: recall,
-        }
-      : c,
-  )
-  return { next, wireRemove: { from: pid, to: agentId } }
-}
-
-function openQuestionsForCard(
-  card: WorkflowCard,
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-): string[] {
-  const ex = (card.openQuestions ?? []).map((s) => s.trim()).filter(Boolean)
-  if (card.kind === 'problem') {
-    const hasSwarm = agentsInProblemSwarm(card.id, cards, wires).length > 0
-    if (!hasSwarm) {
-      const structural =
-        'No specialists combined with this hub yet — drop in the first agent and let the swarm form.'
-      return ex.length > 0 ? [...ex, structural] : [structural]
-    }
-  }
-  return ex
-}
-
-function rectIntersectionArea(
-  ax: number,
-  ay: number,
-  aw: number,
-  ah: number,
-  bx: number,
-  by: number,
-  bw: number,
-  bh: number,
-): number {
-  const x1 = Math.max(ax, bx)
-  const y1 = Math.max(ay, by)
-  const x2 = Math.min(ax + aw, bx + bw)
-  const y2 = Math.min(ay + ah, by + bh)
-  const w = x2 - x1
-  const h = y2 - y1
-  return w > 0 && h > 0 ? w * h : 0
-}
-
-function bestProblemOverlap(
-  agent: WorkflowCard,
-  problems: WorkflowCard[],
-): { id: string; area: number } | null {
-  let best: { id: string; area: number } | null = null
-  const ah = cardDisplayHeight(agent)
-  for (const p of problems) {
-    const ph = cardDisplayHeight(p)
-    const area = rectIntersectionArea(
-      agent.x,
-      agent.y,
-      agent.width,
-      ah,
-      p.x,
-      p.y,
-      p.width,
-      ph,
-    )
-    if (area > 0 && (!best || area > best.area)) best = { id: p.id, area }
-  }
-  return best
-}
-
-function isDescendantAgent(descId: string, ancestorId: string, cards: WorkflowCard[]): boolean {
-  let cur: WorkflowCard | undefined = cards.find((c) => c.id === descId && c.kind === 'agent')
-  const visited = new Set<string>()
-  while (cur && cur.parentAgentId && !visited.has(cur.id)) {
-    visited.add(cur.id)
-    if (cur.parentAgentId === ancestorId) return true
-    const pid = cur.parentAgentId
-    cur = cards.find((c) => c.id === pid && c.kind === 'agent')
-  }
-  return false
-}
-
-function wouldCreateParentCycle(childId: string, parentId: string, cards: WorkflowCard[]): boolean {
-  if (childId === parentId) return true
-  return isDescendantAgent(parentId, childId, cards)
-}
-
-function bestParentAgentTarget(agent: WorkflowCard, cards: WorkflowCard[]): { id: string; area: number } | null {
-  let best: { id: string; area: number } | null = null
-  const ah = cardDisplayHeight(agent)
-  for (const o of cards) {
-    if (o.kind !== 'agent' || o.id === agent.id) continue
-    if (wouldCreateParentCycle(agent.id, o.id, cards)) continue
-    const oh = cardDisplayHeight(o)
-    const area = rectIntersectionArea(
-      agent.x,
-      agent.y,
-      agent.width,
-      ah,
-      o.x,
-      o.y,
-      o.width,
-      oh,
-    )
-    if (area > 0 && (!best || area > best.area)) best = { id: o.id, area }
-  }
-  return best
-}
-
-function agentSubUnionBounds(
-  parentAgentId: string,
-  cards: WorkflowCard[],
-): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  const p = cards.find((c) => c.id === parentAgentId && c.kind === 'agent')
-  if (!p) return null
-  const ph = cardDisplayHeight(p)
-  let minX = p.x
-  let minY = p.y
-  let maxX = p.x + p.width
-  let maxY = p.y + ph
-  for (const s of cards) {
-    if (s.kind !== 'agent' || s.parentAgentId !== parentAgentId) continue
-    const h = cardDisplayHeight(s)
-    minX = Math.min(minX, s.x)
-    minY = Math.min(minY, s.y)
-    maxX = Math.max(maxX, s.x + s.width)
-    maxY = Math.max(maxY, s.y + h)
-  }
-  return { minX, minY, maxX, maxY }
-}
-
-function reflowSubagentLayout(cards: WorkflowCard[], parentAgentId: string): WorkflowCard[] {
-  const p = cards.find((c) => c.id === parentAgentId && c.kind === 'agent')
-  if (!p) return cards
-  const subs = cards
-    .filter((a) => a.kind === 'agent' && a.parentAgentId === parentAgentId)
-    .sort((a, b) => {
-      if (a.y !== b.y) return a.y - b.y
-      if (a.x !== b.x) return a.x - b.x
-      return a.id.localeCompare(b.id)
-    })
-  if (subs.length === 0) return cards
-
-  const ph = cardDisplayHeight(p)
-  const layouts = layoutKanbanStrip(subs, p.x, p.width, p.y + ph)
-
-  return cards.map((c) => {
-    if (c.kind !== 'agent' || c.parentAgentId !== parentAgentId) return c
-    const pr = layouts.get(c.id)
-    if (!pr) return c
-    return { ...c, x: pr.x, y: pr.y, width: pr.width }
-  })
-}
-
-function countSubagents(agentId: string, cards: WorkflowCard[]): number {
-  return cards.filter((c) => c.kind === 'agent' && c.parentAgentId === agentId).length
-}
-
-function descendantHasOpenQuestions(
-  agentId: string,
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-): boolean {
-  for (const c of cards) {
-    if (c.kind !== 'agent' || c.parentAgentId !== agentId) continue
-    if (openQuestionsForCard(c, cards, wires).length > 0) return true
-    if (descendantHasOpenQuestions(c.id, cards, wires)) return true
-  }
-  return false
-}
-
-function touchPairMetrics(
-  t0: Touch,
-  t1: Touch,
-  rect: DOMRect,
-): { cx: number; cy: number; dist: number } {
-  const x1 = t0.clientX - rect.left
-  const y1 = t0.clientY - rect.top
-  const x2 = t1.clientX - rect.left
-  const y2 = t1.clientY - rect.top
-  return {
-    cx: (x1 + x2) / 2,
-    cy: (y1 + y2) / 2,
-    dist: Math.hypot(x2 - x1, y2 - y1),
-  }
-}
-
 /** Default board = Hedgerows 2.0 Δ squad (virtual company preset). */
 const SEED_CARDS: WorkflowCard[] = hedgerowsDeltaSquadCards()
 
@@ -345,39 +99,6 @@ function getBootStateOnce(): BootState {
     }
   }
   return bootStateMemo
-}
-
-function buildProblemSwarmObjective(problem: WorkflowCard, cards: WorkflowCard[], wires: BoardWire[]): string {
-  const sections: string[] = [problem.title.trim()]
-  if (problem.mission?.trim()) {
-    sections.push(problem.mission.trim())
-  }
-
-  const openItems = openQuestionsForCard(problem, cards, wires)
-  if (openItems.length > 0) {
-    sections.push(`Open questions:\n- ${openItems.join('\n- ')}`)
-  }
-
-  const assignedAgents = agentsInProblemSwarm(problem.id, cards, wires)
-  if (assignedAgents.length > 0) {
-    sections.push(`Current swarm:\n- ${assignedAgents.map((agent) => agent.title).join('\n- ')}`)
-  }
-
-  sections.push('Operate from the DewDrops problem room and leave a resumable Butler swarm report.')
-  return sections.filter(Boolean).join('\n\n')
-}
-
-function swarmRunIsActive(status: string | undefined): boolean {
-  return status === 'queued' || status === 'running' || status === 'staged'
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function formatRunStatus(status: string | undefined): string {
-  if (!status) return 'unknown'
-  return status.replace(/_/g, ' ')
 }
 
 const SWARM_TEMPLATE_OPTIONS: Array<{ value: ButlerSwarmTemplate; label: string }> = [
@@ -457,18 +178,32 @@ export default function BoardView() {
   )
 
   const pushSelectionTrace = useCallback(
-    (label: string, detail: string) => {
+    (label: string, detail: string, selectedSnapshot: string[] = selectedIds) => {
       if (!traceEnabled) return
       traceSeqRef.current += 1
+      const entry = { id: traceSeqRef.current, label, detail }
       setSelectionTrace((prev) =>
-        [{ id: traceSeqRef.current, label, detail }, ...prev].slice(0, 14),
+        [entry, ...prev].slice(0, 14),
       )
+      void sendUiTraceEvent(bridgeSettings, {
+        surface: 'dewdrops',
+        label,
+        detail,
+        selected_ids: selectedSnapshot,
+        metadata: {
+          trace_id: entry.id,
+        },
+      }).catch(() => {})
     },
-    [traceEnabled],
+    [bridgeSettings, selectedIds, traceEnabled],
   )
 
   useEffect(() => {
-    pushSelectionTrace('selection', selectedIds.length > 0 ? selectedIds.join(', ') : 'none')
+    pushSelectionTrace(
+      'selection',
+      selectedIds.length > 0 ? selectedIds.join(', ') : 'none',
+      selectedIds,
+    )
   }, [pushSelectionTrace, selectedIds])
 
   useEffect(() => {

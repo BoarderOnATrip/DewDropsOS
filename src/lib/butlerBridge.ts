@@ -62,6 +62,14 @@ export type ButlerSwarmRun = {
   agent_states?: ButlerSwarmRunAgent[]
 }
 
+export type ButlerUiTraceEvent = {
+  surface?: string
+  label: string
+  detail?: string
+  selected_ids?: string[]
+  metadata?: Record<string, unknown>
+}
+
 export type CreateSwarmContractInput = {
   title: string
   objective: string
@@ -222,4 +230,21 @@ export async function listSwarmRuns(
     },
   )
   return Array.isArray(result.runs) ? result.runs : []
+}
+
+export async function sendUiTraceEvent(
+  settings: ButlerBridgeSettings,
+  payload: ButlerUiTraceEvent,
+): Promise<void> {
+  await bridgeRequest(settings, '/debug/ui-trace', {
+    method: 'POST',
+    headers: bridgeHeaders(settings),
+    body: JSON.stringify({
+      surface: payload.surface ?? 'dewdrops',
+      label: payload.label,
+      detail: payload.detail ?? '',
+      selected_ids: payload.selected_ids ?? [],
+      metadata: payload.metadata ?? {},
+    }),
+  })
 }
