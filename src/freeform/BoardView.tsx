@@ -388,6 +388,12 @@ const SWARM_TEMPLATE_OPTIONS: Array<{ value: ButlerSwarmTemplate; label: string 
   { value: 'relationship', label: 'Relationship' },
 ]
 
+type SelectionTraceEntry = {
+  id: number
+  label: string
+  detail: string
+}
+
 export default function BoardView() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
@@ -407,9 +413,15 @@ export default function BoardView() {
   const [recentRuns, setRecentRuns] = useState<ButlerSwarmRun[]>([])
   const [launchTemplate, setLaunchTemplate] = useState<ButlerSwarmTemplate>('planning')
   const [launchObjective, setLaunchObjective] = useState('')
+  const [traceEnabled, setTraceEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
+  })
+  const [selectionTrace, setSelectionTrace] = useState<SelectionTraceEntry[]>([])
 
   const cardsRef = useRef(cards)
   const wiresRef = useRef(wires)
+  const traceSeqRef = useRef(0)
   /** Hub overlap ejection pauses while these cards are being dragged or resized. */
   const ejectionDragIdsRef = useRef<Set<string>>(new Set())
   /** Any pointer down on a card — pauses ejection so clicks/drags don’t fight the sim. */
@@ -443,6 +455,21 @@ export default function BoardView() {
     },
     [],
   )
+
+  const pushSelectionTrace = useCallback(
+    (label: string, detail: string) => {
+      if (!traceEnabled) return
+      traceSeqRef.current += 1
+      setSelectionTrace((prev) =>
+        [{ id: traceSeqRef.current, label, detail }, ...prev].slice(0, 14),
+      )
+    },
+    [traceEnabled],
+  )
+
+  useEffect(() => {
+    pushSelectionTrace('selection', selectedIds.length > 0 ? selectedIds.join(', ') : 'none')
+  }, [pushSelectionTrace, selectedIds])
 
   useEffect(() => {
     const clearEjectionDrag = () => {
@@ -674,6 +701,7 @@ export default function BoardView() {
       el.closest('.freeform-card') ||
       el.closest('[data-board-card]')
     ) {
+      pushSelectionTrace('viewport.pointerdown', 'ignored card hit')
       return
     }
     /** Grid is pointer-events:none; empty canvas usually hits `.freeform-world` (not the viewport node). */
@@ -681,11 +709,15 @@ export default function BoardView() {
       el === e.currentTarget ||
       el.classList.contains('freeform-grid') ||
       el.classList.contains('freeform-world')
-    if (!onBoard) return
+    if (!onBoard) {
+      pushSelectionTrace('viewport.pointerdown', `ignored ${el.className || el.tagName.toLowerCase()}`)
+      return
+    }
 
     const immediatePan = e.button === 1 || (e.button === 0 && spaceDown.current)
     if (immediatePan) {
       e.preventDefault()
+      pushSelectionTrace('viewport.pointerdown', 'pan start')
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       panRef.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY }
       setIsPanning(true)
@@ -694,6 +726,7 @@ export default function BoardView() {
 
     if (e.button === 0) {
       e.preventDefault()
+      pushSelectionTrace('viewport.pointerdown', 'marquee armed')
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
       const rect = viewportRef.current?.getBoundingClientRect()
       if (rect) {
@@ -754,12 +787,14 @@ export default function BoardView() {
           const hits = cardsRef.current
             .filter((c) => worldRectsIntersect(cardWorldBounds(c), wr))
             .map((c) => c.id)
+          pushSelectionTrace('marquee.complete', hits.length > 0 ? hits.join(', ') : 'no hits')
           flushSync(() => {
             setSelectedIds((prev) =>
               e.shiftKey ? [...new Set([...prev, ...hits])] : hits,
             )
           })
         } else if (!e.shiftKey) {
+          pushSelectionTrace('marquee.clear', 'cleared selection')
           flushSync(() => setSelectedIds([]))
         }
       }
@@ -1248,6 +1283,16 @@ export default function BoardView() {
           </button>
           <button
             type="button"
+            className={`freeform-btn freeform-btn--tool${traceEnabled ? ' is-active' : ''}`}
+            title="Show live selection event trace in the Butler panel"
+            onClick={() => {
+              setTraceEnabled((prev) => !prev)
+            }}
+          >
+            Trace
+          </button>
+          <button
+            type="button"
             className="freeform-btn freeform-btn--tool"
             title="Restore the Hedgerows preset and clear saved board data from this browser"
             onClick={resetBoardToPreset}
@@ -1565,6 +1610,30 @@ export default function BoardView() {
                 <p className="freeform-toolbar-panel-hint">No swarm runs yet.</p>
               )}
             </div>
+
+            {traceEnabled ? (
+              <div className="freeform-toolbar-panel-section">
+                <div className="freeform-toolbar-panel-problem">
+                  <div>
+                    <h3>Selection trace</h3>
+                    <p>Live pointer and selection events from this browser session.</p>
+                  </div>
+                  <span className="freeform-run-pill">{selectedIds.length} selected</span>
+                </div>
+                {selectionTrace.length > 0 ? (
+                  <ul className="freeform-trace-list">
+                    {selectionTrace.map((entry) => (
+                      <li key={entry.id} className="freeform-trace-item">
+                        <strong>{entry.label}</strong>
+                        <span>{entry.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="freeform-toolbar-panel-hint">No events traced yet.</p>
+                )}
+              </div>
+            ) : null}
           </div>
         </section>
         {boardNotice ? (
@@ -1722,6 +1791,7 @@ export default function BoardView() {
               onReleaseNod={onReleaseNod}
               onMarkUserMovingCard={() => markUserMovingCard(c.id)}
               onCardPointerSession={beginCardPointerSession}
+              onTrace={pushSelectionTrace}
               onMakeAgentReadable={
                 c.kind === 'agent'
                   ? () => {
@@ -1838,6 +1908,8 @@ type CardViewProps = {
   onMarkUserMovingCard?: () => void
   /** First contact on card — pause overlap sim before drag/selection handlers run. */
   onCardPointerSession?: () => void
+  /** Dev trace for pointer/selection routing. */
+  onTrace?: (label: string, detail: string) => void
 }
 
 function OpenQuestionsBlock({ items }: { items: string[] }) {
@@ -1870,6 +1942,7 @@ function WorkflowCardView({
   onMakeAgentReadable,
   onMarkUserMovingCard,
   onCardPointerSession,
+  onTrace,
 }: CardViewProps) {
   const drag = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null)
   const resize = useRef<{ sx: number; sy: number; w: number; h: number } | null>(null)
@@ -1880,6 +1953,7 @@ function WorkflowCardView({
     const el = pointerEventTargetEl(e)
     if (!el) return
     if (el.closest('button, a, [role="button"]')) return
+    onTrace?.('card.body.pointerdown', `${card.id} body`)
     e.stopPropagation()
     onMakeAgentReadable?.()
   }
@@ -1889,6 +1963,7 @@ function WorkflowCardView({
     if (e.button !== 0 || resize.current) return
     const el = pointerEventTargetEl(e)
     if (!el) return
+    onTrace?.('card.header.pointerdown', `${card.id} header`)
     e.stopPropagation()
     onCardPointerSession?.()
     onMarkUserMovingCard?.()
@@ -1902,6 +1977,7 @@ function WorkflowCardView({
     if (e.button !== 0 || resize.current) return
     const el = pointerEventTargetEl(e)
     if (!el) return
+    onTrace?.('card.agentHeader.pointerdown', `${card.id} agent-header`)
     e.stopPropagation()
     onCardPointerSession?.()
     onMarkUserMovingCard?.()
@@ -1926,7 +2002,11 @@ function WorkflowCardView({
   const onCardPointerDownCapture = (e: React.PointerEvent) => {
     if (e.button !== 0) return
     const el = pointerEventTargetEl(e)
-    if (shouldIgnoreSelectTarget(el)) return
+    if (shouldIgnoreSelectTarget(el)) {
+      onTrace?.('card.pointerdown.capture', `${card.id} ignored target`)
+      return
+    }
+    onTrace?.('card.pointerdown.capture', `${card.id}${e.shiftKey ? ' shift' : ''}`)
     selectNow(e.shiftKey)
   }
 

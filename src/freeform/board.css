@@ -254,6 +254,39 @@
   list-style: none;
 }
 
+.freeform-trace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.freeform-trace-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.freeform-trace-item strong {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(190, 225, 255, 0.94);
+}
+
+.freeform-trace-item span {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .freeform-run-list-item {
   display: flex;
   flex-direction: column;
@@ -659,11 +692,31 @@
   user-select: none;
 }
 
+.freeform-card::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
 .freeform-card.selected {
-  border-color: rgba(10, 132, 255, 0.75);
+  z-index: 3;
+}
+
+.freeform-card.selected::after {
+  opacity: 1;
+  border-color: rgba(120, 200, 255, 0.96);
   box-shadow:
-    0 0 0 1px rgba(10, 132, 255, 0.35),
-    0 12px 40px rgba(0, 0, 0, 0.45);
+    0 0 0 1px rgba(10, 132, 255, 0.55),
+    0 0 22px rgba(10, 132, 255, 0.3);
 }
 
 /* Problem = amorphous liquid-metal bubble; open items still pulse orange on top */
