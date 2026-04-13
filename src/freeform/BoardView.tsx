@@ -1848,7 +1848,6 @@ function WorkflowCardView({
     const el = pointerEventTargetEl(e)
     if (!el) return
     e.stopPropagation()
-    selectNow(e.shiftKey)
     onCardPointerSession?.()
     onMarkUserMovingCard?.()
     drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
@@ -1862,7 +1861,6 @@ function WorkflowCardView({
     const el = pointerEventTargetEl(e)
     if (!el) return
     e.stopPropagation()
-    selectNow(e.shiftKey)
     onCardPointerSession?.()
     onMarkUserMovingCard?.()
     if (el.closest('.freeform-agent-drag-handle') && agentDragHandleRef.current) {
@@ -1875,7 +1873,7 @@ function WorkflowCardView({
     flushSync(() => onSelect(shiftKey))
   }
 
-  /** Keep selection explicit and avoid duplicate pointer/mouse capture toggles. */
+  /** Pointer-down on a card selects it. Empty-canvas pointer-down starts marquee. */
   const shouldIgnoreSelectTarget = (el: Element | null) => {
     if (!el) return true
     if (el.closest('button, a, [role="button"]')) return true
@@ -1883,11 +1881,10 @@ function WorkflowCardView({
     return false
   }
 
-  const onCardClickCapture = (e: React.MouseEvent) => {
+  const onCardPointerDownCapture = (e: React.PointerEvent) => {
     if (e.button !== 0) return
     const el = pointerEventTargetEl(e)
     if (shouldIgnoreSelectTarget(el)) return
-    e.stopPropagation()
     selectNow(e.shiftKey)
   }
 
@@ -2016,7 +2013,7 @@ function WorkflowCardView({
         width: card.width,
         height: card.expanded ? card.height : 44,
       }}
-      onClickCapture={onCardClickCapture}
+      onPointerDownCapture={onCardPointerDownCapture}
       onPointerDown={(e) => {
         e.stopPropagation()
       }}
