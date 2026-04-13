@@ -28,15 +28,12 @@ import {
 } from './persistBoard'
 import { buildProblemSwarmObjective } from './boardObjective'
 import { touchPairMetrics } from './boardTouch'
-import {
-  agentSubUnionBounds,
-  bestParentAgentTarget,
-  bestProblemOverlap,
-  countSubagents,
-} from './cardOverlap'
+import { SwarmEnvelopeLayer } from './components/SwarmEnvelopeLayer'
+import { WorkflowCardView } from './components/WorkflowCardView'
+import { agentSubUnionBounds, bestParentAgentTarget, bestProblemOverlap } from './cardOverlap'
 import { DEFAULT_KANBAN_MIN_AGENT_WIDTH, cardDisplayHeight, magneticKanbanDockPosition } from './kanbanGeometry'
 import { reflowHubKanbanLayout, reflowSubagentLayout } from './kanbanReflow'
-import { descendantHasOpenQuestions, openQuestionsForCard } from './openQuestions'
+import { openQuestionsForCard } from './openQuestions'
 import { applyReleaseNod } from './releaseNod'
 import { clampNumber, formatRunStatus, swarmRunIsActive } from './runFormat'
 import {
@@ -48,7 +45,6 @@ import {
   pointInBounds,
   problemEnvelopePad,
   problemEnvelopeStaySlack,
-  swarmMassForProblem,
   swarmUnionBounds,
 } from './swarmAgents'
 import { stepProblemOverlapEjection } from './problemOverlapEjection'
@@ -58,29 +54,13 @@ import {
   worldRectsIntersect,
   zoomAtPoint,
 } from './viewportGeometry'
+import { eventPathHitsBoardCard, pointerEventTargetEl } from './pointerDom'
 import './board.css'
 
 let cardId = 0
 function newCardId(): string {
   cardId += 1
   return `wf-${cardId}`
-}
-
-/** `pointerdown`/`mousedown` target is often a Text node — it has no `.closest`. */
-function pointerEventTargetEl(e: { target: EventTarget | null }): Element | null {
-  const n = e.target
-  if (n instanceof Element) return n
-  if (n instanceof Text) return n.parentElement
-  return null
-}
-
-function eventPathHitsBoardCard(path: EventTarget[] | undefined): boolean {
-  if (!path) return false
-  return path.some(
-    (node) =>
-      node instanceof Element &&
-      (node.classList.contains('freeform-card') || node.hasAttribute('data-board-card')),
-  )
 }
 
 function boardCardIdAtClientPoint(clientX: number, clientY: number): string | null {
@@ -1556,7 +1536,6 @@ export default function BoardView() {
               wires={wires}
               handshakeFocus={handshakeFocus}
               selected={selectedIds.includes(c.id)}
-              selectionSize={selectedIds.length}
               camera={camera}
               onSelect={(shiftKey) =>
                 flushSync(() => {
@@ -1737,7 +1716,6 @@ type CardViewProps = {
   wires: BoardWire[]
   handshakeFocus: { agentId: string; problemId: string } | null
   selected: boolean
-  selectionSize: number
   camera: BoardCamera
   onSelect: (shiftKey?: boolean) => void
   onMove: (x: number, y: number) => void
@@ -1775,7 +1753,6 @@ function WorkflowCardView({
   wires,
   handshakeFocus,
   selected,
-  selectionSize,
   camera,
   onSelect,
   onMove,
@@ -1799,7 +1776,7 @@ function WorkflowCardView({
     if (el.closest('button, a, [role="button"]')) return
     onTrace?.('card.body.pointerdown', `${card.id} body`)
     e.stopPropagation()
-    if (selected && selectionSize > 1) {
+    if (selected) {
       onCardPointerSession?.()
       onMarkUserMovingCard?.()
       drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
