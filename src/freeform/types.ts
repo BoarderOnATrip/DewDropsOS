@@ -22,6 +22,10 @@ export type WorkflowCard = {
   /** Problem only: footprint before swarm mass is applied; inferred from size until first resize */
   problemBaseWidth?: number
   problemBaseHeight?: number
+  /** Problem only: extra visual and interaction padding around the swarm membrane */
+  swarmEnvelopePad?: number
+  /** Problem only: preferred minimum width for assigned swarm cards */
+  swarmAgentMinWidth?: number
   /** Agents only: attached problem after drag-combine; null = pool / unassigned */
   assignedToProblemId?: string | null
   /** Agents only: nested under another agent as a subagent (fractal swarm) */

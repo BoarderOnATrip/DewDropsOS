@@ -9,7 +9,7 @@ const KANBAN_GAP = 14
 /** Horizontal inset from hub/parent edges; 0 so the lineup matches the anchor width edge-to-edge. */
 const KANBAN_INSET = 0
 /** Reflow won’t pack more agents per row than fit at this minimum width (matches resize floor). */
-const KANBAN_MIN_AGENT_WIDTH = 120
+export const DEFAULT_KANBAN_MIN_AGENT_WIDTH = 120
 const MAG_GRID = 12
 const MAG_EDGE = 16
 
@@ -42,11 +42,12 @@ export function layoutKanbanStrip(
   anchorX: number,
   anchorWidth: number,
   anchorContentBottomY: number,
+  minAgentWidth = DEFAULT_KANBAN_MIN_AGENT_WIDTH,
 ): Map<string, KanbanCellLayout> {
   const track = kanbanInnerTrackWidth(anchorWidth)
   const startX = anchorX + KANBAN_INSET
   let y = anchorContentBottomY + KANBAN_GAP
-  const maxPer = kanbanMaxAgentsPerRow(track, KANBAN_GAP, KANBAN_MIN_AGENT_WIDTH)
+  const maxPer = kanbanMaxAgentsPerRow(track, KANBAN_GAP, minAgentWidth)
 
   const rowCounts: number[] = []
   let rem = rowAgents.length

@@ -96,6 +96,8 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
     if (w.problemShape === 'bubble' || w.problemShape === 'panel') card.problemShape = w.problemShape
     if (isNum(w.problemBaseWidth)) card.problemBaseWidth = w.problemBaseWidth
     if (isNum(w.problemBaseHeight)) card.problemBaseHeight = w.problemBaseHeight
+    if (isNum(w.swarmEnvelopePad)) card.swarmEnvelopePad = w.swarmEnvelopePad
+    if (isNum(w.swarmAgentMinWidth)) card.swarmAgentMinWidth = w.swarmAgentMinWidth
     if (w.assignedToProblemId === null || isStr(w.assignedToProblemId)) {
       card.assignedToProblemId = w.assignedToProblemId as string | null
     }

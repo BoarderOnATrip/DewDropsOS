@@ -25,7 +25,24 @@ import {
   stringifyBoard,
   type PersistedBoardV1,
 } from './persistBoard'
-import { cardDisplayHeight, layoutKanbanStrip, magneticKanbanDockPosition } from './kanbanGeometry'
+import {
+  DEFAULT_KANBAN_MIN_AGENT_WIDTH,
+  cardDisplayHeight,
+  layoutKanbanStrip,
+  magneticKanbanDockPosition,
+} from './kanbanGeometry'
+import {
+  ENVELOPE_STAY_SLACK,
+  DEFAULT_SWARM_ENVELOPE_PAD,
+  agentsInProblemSwarm,
+  expandBounds,
+  normalizeProblemFootprint,
+  pointInBounds,
+  problemEnvelopePad,
+  problemEnvelopeStaySlack,
+  swarmMassForProblem,
+  swarmUnionBounds,
+} from './swarmAgents'
 import { stepProblemOverlapEjection } from './problemOverlapEjection'
 import {
   cardWorldBounds,
@@ -58,124 +75,6 @@ function eventPathHitsBoardCard(path: EventTarget[] | undefined): boolean {
   )
 }
 
-/**
- * Legacy: used only to infer `problemBase*` when shrinking cards that were inflated by an older
- * swarm-mass rule (width/height += mass × step).
- */
-const SWARM_SIZE_DW = 22
-const SWARM_SIZE_DH = 14
-
-/** Pixels past the tight union (hub + drops) where an assigned agent may move without detaching. */
-const ENVELOPE_STAY_SLACK = 48
-
-/** Visual padding for the drawn water envelope stroke (world px). */
-const ENVELOPE_VISUAL_PAD = 12
-
-function swarmMassForProblem(
-  problemId: string,
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-): number {
-  return agentsInProblemSwarm(problemId, cards, wires).length
-}
-
-/** Root-assigned agents, plus every nested subagent under them (fractal swarm). */
-function agentsInProblemSwarm(
-  problemId: string,
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-): WorkflowCard[] {
-  void wires
-  const seen = new Set<string>()
-  const out: WorkflowCard[] = []
-  const push = (a: WorkflowCard) => {
-    if (seen.has(a.id)) return
-    seen.add(a.id)
-    out.push(a)
-  }
-  for (const c of cards) {
-    if (c.kind === 'agent' && c.assignedToProblemId === problemId) push(c)
-  }
-  let growing = true
-  while (growing) {
-    growing = false
-    for (const c of cards) {
-      if (c.kind !== 'agent' || !c.parentAgentId || seen.has(c.id)) continue
-      if (seen.has(c.parentAgentId)) {
-        push(c)
-        growing = true
-      }
-    }
-  }
-  return out
-}
-
-function swarmUnionBounds(
-  problemId: string,
-  cards: WorkflowCard[],
-  wires: BoardWire[],
-): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  const p = cards.find((c) => c.id === problemId && c.kind === 'problem')
-  if (!p) return null
-  const ph = cardDisplayHeight(p)
-  let minX = p.x
-  let minY = p.y
-  let maxX = p.x + p.width
-  let maxY = p.y + ph
-  for (const a of agentsInProblemSwarm(problemId, cards, wires)) {
-    const h = cardDisplayHeight(a)
-    minX = Math.min(minX, a.x)
-    minY = Math.min(minY, a.y)
-    maxX = Math.max(maxX, a.x + a.width)
-    maxY = Math.max(maxY, a.y + h)
-  }
-  return { minX, minY, maxX, maxY }
-}
-
-function expandBounds(
-  b: { minX: number; minY: number; maxX: number; maxY: number },
-  m: number,
-): { minX: number; minY: number; maxX: number; maxY: number } {
-  return {
-    minX: b.minX - m,
-    minY: b.minY - m,
-    maxX: b.maxX + m,
-    maxY: b.maxY + m,
-  }
-}
-
-function pointInBounds(
-  cx: number,
-  cy: number,
-  b: { minX: number; minY: number; maxX: number; maxY: number },
-): boolean {
-  return cx >= b.minX && cx <= b.maxX && cy >= b.minY && cy <= b.maxY
-}
-
-/** Hub card stays at its footprint; swarm “surface” is the SVG envelope around hub + boards. */
-function normalizeProblemFootprint(cards: WorkflowCard[], wires: BoardWire[]): WorkflowCard[] {
-  let changed = false
-  const next = cards.map((c) => {
-    if (c.kind !== 'problem') return c
-    const mass = swarmMassForProblem(c.id, cards, wires)
-    const bw =
-      c.problemBaseWidth ?? Math.max(120, c.width - mass * SWARM_SIZE_DW)
-    const bh =
-      c.problemBaseHeight ?? Math.max(80, c.height - mass * SWARM_SIZE_DH)
-    if (
-      c.width === bw &&
-      c.height === bh &&
-      c.problemBaseWidth === bw &&
-      c.problemBaseHeight === bh
-    ) {
-      return c
-    }
-    changed = true
-    return { ...c, problemBaseWidth: bw, problemBaseHeight: bh, width: bw, height: bh }
-  })
-  return changed ? next : cards
-}
-
 /** Assigned-only: row(s) under the hub; each row exactly fills hub inner width with equal tiles. */
 function reflowHubKanbanLayout(cards: WorkflowCard[], problemId: string): WorkflowCard[] {
   const p = cards.find((c) => c.id === problemId && c.kind === 'problem')
@@ -192,7 +91,13 @@ function reflowHubKanbanLayout(cards: WorkflowCard[], problemId: string): Workfl
   if (assigned.length === 0) return cards
 
   const ph = cardDisplayHeight(p)
-  const layouts = layoutKanbanStrip(assigned, p.x, p.width, p.y + ph)
+  const layouts = layoutKanbanStrip(
+    assigned,
+    p.x,
+    p.width,
+    p.y + ph,
+    p.swarmAgentMinWidth ?? DEFAULT_KANBAN_MIN_AGENT_WIDTH,
+  )
 
   return cards.map((c) => {
     if (c.kind !== 'agent' || c.assignedToProblemId !== problemId || c.parentAgentId) return c
@@ -464,6 +369,10 @@ function buildProblemSwarmObjective(problem: WorkflowCard, cards: WorkflowCard[]
 
 function swarmRunIsActive(status: string | undefined): boolean {
   return status === 'queued' || status === 'running' || status === 'staged'
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
 }
 
 function formatRunStatus(status: string | undefined): string {
@@ -918,7 +827,9 @@ export default function BoardView() {
         nextPid = par?.assignedToProblemId ?? null
       } else if (prevPid && !prevParent) {
         const union = swarmUnionBounds(prevPid, list, wiresNow)
-        if (union && pointInBounds(cx, cy, expandBounds(union, ENVELOPE_STAY_SLACK))) {
+        const prevProblem = list.find((c) => c.id === prevPid && c.kind === 'problem')
+        const prevSlack = prevProblem ? problemEnvelopeStaySlack(prevProblem) : ENVELOPE_STAY_SLACK
+        if (union && pointInBounds(cx, cy, expandBounds(union, prevSlack))) {
           nextPid = prevPid
           nextParent = null
         } else {
@@ -1088,6 +999,19 @@ export default function BoardView() {
     [cards, selectedProblem, wires],
   )
 
+  const selectedProblemRoomWidth = selectedProblem
+    ? Math.round(selectedProblem.problemBaseWidth ?? selectedProblem.width)
+    : 280
+  const selectedProblemRoomHeight = selectedProblem
+    ? Math.round(selectedProblem.problemBaseHeight ?? selectedProblem.height)
+    : 180
+  const selectedProblemEnvelopePad = selectedProblem
+    ? Math.round(problemEnvelopePad(selectedProblem))
+    : DEFAULT_SWARM_ENVELOPE_PAD
+  const selectedProblemAgentWidth = selectedProblem
+    ? Math.round(selectedProblem.swarmAgentMinWidth ?? DEFAULT_KANBAN_MIN_AGENT_WIDTH)
+    : DEFAULT_KANBAN_MIN_AGENT_WIDTH
+
   const selectedProblemDraftKey = useMemo(() => {
     if (!selectedProblem) return ''
     return [
@@ -1116,6 +1040,24 @@ export default function BoardView() {
     }
     return recentRuns.slice(0, 6)
   }, [recentRuns, selectedProblem?.butlerRoomId])
+
+  const updateSelectedProblemLayout = useCallback(
+    (mutate: (problem: WorkflowCard) => WorkflowCard) => {
+      if (!selectedProblem) return
+      setCards((list) => {
+        let changed = false
+        let next = list.map((card) => {
+          if (card.id !== selectedProblem.id || card.kind !== 'problem') return card
+          changed = true
+          return mutate(card)
+        })
+        if (!changed) return list
+        next = reflowHubKanbanLayout(next, selectedProblem.id)
+        return next
+      })
+    },
+    [selectedProblem],
+  )
 
   const refreshRuns = useCallback(
     async (quiet = false) => {
@@ -1456,6 +1398,106 @@ export default function BoardView() {
                 </label>
               </div>
 
+              <div className="freeform-toolbar-panel-form-row">
+                <label className="freeform-field">
+                  <span>Room width</span>
+                  <input
+                    type="number"
+                    min={160}
+                    max={720}
+                    step={10}
+                    value={selectedProblemRoomWidth}
+                    disabled={!selectedProblem}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      if (!selectedProblem) return
+                      const nextWidth = clampNumber(
+                        e.target.valueAsNumber || selectedProblemRoomWidth,
+                        160,
+                        720,
+                      )
+                      updateSelectedProblemLayout((problem) => ({
+                        ...problem,
+                        width: nextWidth,
+                        problemBaseWidth: nextWidth,
+                      }))
+                    }}
+                  />
+                </label>
+                <label className="freeform-field">
+                  <span>Room height</span>
+                  <input
+                    type="number"
+                    min={100}
+                    max={520}
+                    step={10}
+                    value={selectedProblemRoomHeight}
+                    disabled={!selectedProblem}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      if (!selectedProblem) return
+                      const nextHeight = clampNumber(
+                        e.target.valueAsNumber || selectedProblemRoomHeight,
+                        100,
+                        520,
+                      )
+                      updateSelectedProblemLayout((problem) => ({
+                        ...problem,
+                        height: nextHeight,
+                        problemBaseHeight: nextHeight,
+                      }))
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className="freeform-toolbar-panel-form-row">
+                <label className="freeform-field">
+                  <span>Membrane pad</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={120}
+                    step={4}
+                    value={selectedProblemEnvelopePad}
+                    disabled={!selectedProblem}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      if (!selectedProblem) return
+                      const nextPad = clampNumber(
+                        e.target.valueAsNumber || selectedProblemEnvelopePad,
+                        0,
+                        120,
+                      )
+                      updateSelectedProblemLayout((problem) => ({
+                        ...problem,
+                        swarmEnvelopePad: nextPad,
+                      }))
+                    }}
+                  />
+                </label>
+                <label className="freeform-field">
+                  <span>Card width</span>
+                  <input
+                    type="number"
+                    min={96}
+                    max={260}
+                    step={8}
+                    value={selectedProblemAgentWidth}
+                    disabled={!selectedProblem}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      if (!selectedProblem) return
+                      const nextWidth = clampNumber(
+                        e.target.valueAsNumber || selectedProblemAgentWidth,
+                        96,
+                        260,
+                      )
+                      updateSelectedProblemLayout((problem) => ({
+                        ...problem,
+                        swarmAgentMinWidth: nextWidth,
+                      }))
+                    }}
+                  />
+                </label>
+              </div>
+
               <label className="freeform-field">
                 <span>Objective</span>
                 <textarea
@@ -1753,7 +1795,7 @@ function SwarmEnvelopeLayer({
         if (swarmMassForProblem(p.id, cards, wires) === 0) return null
         const u = swarmUnionBounds(p.id, cards, wires)
         if (!u) return null
-        const pad = ENVELOPE_VISUAL_PAD
+        const pad = problemEnvelopePad(p)
         const x = u.minX - pad
         const y = u.minY - pad
         const w = u.maxX - u.minX + pad * 2
