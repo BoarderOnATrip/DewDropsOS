@@ -122,6 +122,26 @@ const SWARM_TEMPLATE_OPTIONS: Array<{ value: ButlerSwarmTemplate; label: string 
   { value: 'relationship', label: 'Relationship' },
 ]
 
+const TOOLBAR_PANEL_OPEN_KEY = 'dewdrops-toolbar-panel-open'
+
+function loadToolbarPanelOpen(): boolean {
+  if (typeof localStorage === 'undefined') return false
+  try {
+    return localStorage.getItem(TOOLBAR_PANEL_OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function saveToolbarPanelOpen(next: boolean): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(TOOLBAR_PANEL_OPEN_KEY, next ? '1' : '0')
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
 type SelectionTraceEntry = {
   id: number
   label: string
@@ -147,6 +167,7 @@ export default function BoardView() {
   const [recentRuns, setRecentRuns] = useState<ButlerSwarmRun[]>([])
   const [launchTemplate, setLaunchTemplate] = useState<ButlerSwarmTemplate>('planning')
   const [launchObjective, setLaunchObjective] = useState('')
+  const [toolbarPanelOpen, setToolbarPanelOpen] = useState(() => loadToolbarPanelOpen())
   const [traceEnabled, setTraceEnabled] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
@@ -218,6 +239,10 @@ export default function BoardView() {
       selectedIds,
     )
   }, [pushSelectionTrace, selectedIds])
+
+  useEffect(() => {
+    saveToolbarPanelOpen(toolbarPanelOpen)
+  }, [toolbarPanelOpen])
 
   useEffect(() => {
     const clearEjectionDrag = () => {
@@ -1110,6 +1135,16 @@ export default function BoardView() {
         <div className="freeform-toolbar-actions">
           <button
             type="button"
+            className={`freeform-btn freeform-btn--tool${toolbarPanelOpen ? ' is-active' : ''}`}
+            title="Show or hide the Butler dock"
+            onClick={() => {
+              setToolbarPanelOpen((prev) => !prev)
+            }}
+          >
+            {toolbarPanelOpen ? 'Hide dock' : 'Show dock'}
+          </button>
+          <button
+            type="button"
             className="freeform-btn freeform-btn--tool is-active"
             title="Select and move cards — drag on empty canvas to marquee"
             onClick={() => {
@@ -1166,6 +1201,7 @@ export default function BoardView() {
           <span>{availableAgentCount} available</span>
           <span>{totalOpenQuestionCount} open</span>
         </div>
+        {toolbarPanelOpen ? (
         <section className="freeform-toolbar-panel" aria-label="Butler swarm launcher">
           <div className="freeform-toolbar-panel-header">
             <div>
@@ -1473,6 +1509,7 @@ export default function BoardView() {
             ) : null}
           </div>
         </section>
+        ) : null}
         {boardNotice ? (
           <p
             className={`freeform-toolbar-notice${boardNotice.tone === 'error' ? ' freeform-toolbar-notice--error' : ''}`}
