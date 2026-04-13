@@ -6,15 +6,18 @@ import {
   ButlerBridgeError,
   createSwarmContract,
   getButlerBridgeHealth,
+  getSwarmRunReport,
   launchSwarmContract,
   listSwarmRuns,
   loadButlerBridgeSettings,
   pairLocalBridge,
   saveButlerBridgeSettings,
   sendUiTraceEvent,
+  stopSwarmRun,
   type ButlerBridgeHealth,
   type ButlerBridgeSettings,
   type ButlerSwarmRun,
+  type ButlerSwarmRunReport,
   type ButlerSwarmTemplate,
 } from '../lib/butlerBridge'
 import {
@@ -28,14 +31,16 @@ import {
 } from './persistBoard'
 import { buildProblemSwarmObjective } from './boardObjective'
 import { touchPairMetrics } from './boardTouch'
+import { ProblemSwarmInspector } from './components/ProblemSwarmInspector'
 import { SwarmEnvelopeLayer } from './components/SwarmEnvelopeLayer'
+import { SwarmRunList } from './components/SwarmRunList'
 import { WorkflowCardView } from './components/WorkflowCardView'
 import { agentSubUnionBounds, bestParentAgentTarget, bestProblemOverlap } from './cardOverlap'
 import { DEFAULT_KANBAN_MIN_AGENT_WIDTH, cardDisplayHeight, magneticKanbanDockPosition } from './kanbanGeometry'
 import { reflowHubKanbanLayout, reflowSubagentLayout } from './kanbanReflow'
 import { openQuestionsForCard } from './openQuestions'
 import { applyReleaseNod } from './releaseNod'
-import { clampNumber, formatRunStatus, swarmRunIsActive } from './runFormat'
+import { clampNumber, swarmRunIsActive } from './runFormat'
 import {
   ENVELOPE_STAY_SLACK,
   DEFAULT_SWARM_ENVELOPE_PAD,
@@ -144,7 +149,11 @@ export default function BoardView() {
   const [bridgeHealth, setBridgeHealth] = useState<ButlerBridgeHealth | null>(null)
   const [bridgeBusy, setBridgeBusy] = useState(false)
   const [launchBusy, setLaunchBusy] = useState(false)
+  const [stopBusy, setStopBusy] = useState(false)
   const [recentRuns, setRecentRuns] = useState<ButlerSwarmRun[]>([])
+  const [currentRunId, setCurrentRunId] = useState('')
+  const [currentRunReport, setCurrentRunReport] = useState<ButlerSwarmRunReport | null>(null)
+  const [currentRunReportBusy, setCurrentRunReportBusy] = useState(false)
   const [launchTemplate, setLaunchTemplate] = useState<ButlerSwarmTemplate>('planning')
   const [launchObjective, setLaunchObjective] = useState('')
   const [toolbarPanelOpen, setToolbarPanelOpen] = useState(() => loadToolbarPanelOpen())
@@ -845,6 +854,73 @@ export default function BoardView() {
     return recentRuns.slice(0, 6)
   }, [recentRuns, selectedProblem?.butlerRoomId])
 
+  const latestProblemRunById = useMemo(() => {
+    const next = new Map<string, ButlerSwarmRun>()
+    for (const card of cards) {
+      if (card.kind !== 'problem') continue
+      const matched =
+        (card.lastSwarmRunId
+          ? recentRuns.find((run) => run.id === card.lastSwarmRunId || run.run_id === card.lastSwarmRunId)
+          : undefined) ??
+        (card.butlerRoomId ? recentRuns.find((run) => run.room_id === card.butlerRoomId) : undefined)
+      if (matched) {
+        next.set(card.id, matched)
+      }
+    }
+    return next
+  }, [cards, recentRuns])
+
+  useEffect(() => {
+    if (!selectedProblem) {
+      setCurrentRunId('')
+      setCurrentRunReport(null)
+      return
+    }
+    const preferredRunId =
+      (selectedProblem.lastSwarmRunId &&
+      visibleRuns.some(
+        (run) =>
+          run.id === selectedProblem.lastSwarmRunId || run.run_id === selectedProblem.lastSwarmRunId,
+      )
+        ? selectedProblem.lastSwarmRunId
+        : '') ||
+      visibleRuns[0]?.id ||
+      visibleRuns[0]?.run_id ||
+      ''
+
+    setCurrentRunId((prev) => {
+      if (prev && visibleRuns.some((run) => run.id === prev || run.run_id === prev)) {
+        return prev
+      }
+      return preferredRunId
+    })
+  }, [selectedProblem, visibleRuns])
+
+  useEffect(() => {
+    if (!currentRunId) {
+      setCurrentRunReportBusy(false)
+      setCurrentRunReport(null)
+      return
+    }
+
+    let cancelled = false
+    setCurrentRunReportBusy(true)
+    void getSwarmRunReport(bridgeSettings, currentRunId)
+      .then((report) => {
+        if (!cancelled) setCurrentRunReport(report)
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentRunReport(null)
+      })
+      .finally(() => {
+        if (!cancelled) setCurrentRunReportBusy(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [bridgeSettings, currentRunId])
+
   const updateSelectedProblemLayout = useCallback(
     (mutate: (problem: WorkflowCard) => WorkflowCard) => {
       if (!selectedProblem) return
@@ -961,6 +1037,9 @@ export default function BoardView() {
       })
       const launched = await launchSwarmContract(nextSettings, contract.id)
       const runId = launched.run?.id ?? launched.run?.run_id ?? ''
+      if (runId) {
+        setCurrentRunId(runId)
+      }
 
       setCards((list) =>
         list.map((card) =>
@@ -990,6 +1069,28 @@ export default function BoardView() {
       setLaunchBusy(false)
     }
   }, [bridgeSettings, launchObjective, launchTemplate, refreshRuns, selectedProblem, selectedProblemAgents])
+
+  const stopCurrentSwarmRun = useCallback(async () => {
+    if (!currentRunId) {
+      setBoardNotice({ text: 'Select a run before stopping it.', tone: 'error' })
+      return
+    }
+
+    setStopBusy(true)
+    try {
+      await stopSwarmRun(bridgeSettings, currentRunId)
+      await refreshRuns(true)
+      setBoardNotice({ text: `Stopped swarm run ${currentRunId.slice(-6)}`, tone: 'ok' })
+    } catch (error) {
+      const message =
+        error instanceof ButlerBridgeError || error instanceof Error
+          ? error.message
+          : 'Could not stop Butler swarm'
+      setBoardNotice({ text: message, tone: 'error' })
+    } finally {
+      setStopBusy(false)
+    }
+  }, [bridgeSettings, currentRunId, refreshRuns])
 
   useEffect(() => {
     void refreshBridgeState(true)
@@ -1434,31 +1535,11 @@ export default function BoardView() {
               </div>
 
               {visibleRuns.length > 0 ? (
-                <ul className="freeform-run-list">
-                  {visibleRuns.map((run) => {
-                    const isCurrent = selectedProblem?.lastSwarmRunId === run.id || selectedProblem?.lastSwarmRunId === run.run_id
-                    return (
-                      <li
-                        key={run.id || run.run_id}
-                        className={`freeform-run-list-item${isCurrent ? ' is-current' : ''}`}
-                      >
-                        <div className="freeform-run-list-head">
-                          <strong>{run.title}</strong>
-                          <span
-                            className={`freeform-run-pill${swarmRunIsActive(run.status) ? ' is-active' : ''}`}
-                          >
-                            {formatRunStatus(run.status)}
-                          </span>
-                        </div>
-                        {run.summary ? <p>{run.summary}</p> : null}
-                        <div className="freeform-run-list-meta">
-                          <span>{run.run_id || run.id}</span>
-                          {run.updated_at ? <span>{run.updated_at.slice(11, 19)} UTC</span> : null}
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
+                <SwarmRunList
+                  runs={visibleRuns}
+                  currentRunId={currentRunId || selectedProblem?.lastSwarmRunId}
+                  onSelectRun={setCurrentRunId}
+                />
               ) : (
                 <p className="freeform-toolbar-panel-hint">No swarm runs yet.</p>
               )}
@@ -1537,6 +1618,13 @@ export default function BoardView() {
               handshakeFocus={handshakeFocus}
               selected={selectedIds.includes(c.id)}
               camera={camera}
+              problemRunStatus={c.kind === 'problem' ? latestProblemRunById.get(c.id)?.status : undefined}
+              problemRunSummary={c.kind === 'problem' ? latestProblemRunById.get(c.id)?.summary : undefined}
+              problemRunId={
+                c.kind === 'problem'
+                  ? latestProblemRunById.get(c.id)?.run_id || latestProblemRunById.get(c.id)?.id
+                  : undefined
+              }
               onSelect={(shiftKey) =>
                 flushSync(() => {
                   setSelectedIds((prev) => {
@@ -1643,565 +1731,71 @@ export default function BoardView() {
             />
           ))}
         </div>
-      </div>
-    </div>
-  )
-}
-
-/** Half-size of wire canvas in world px; must cover card positions (paths use same coords as cards). */
-const WIRE_CANVAS_EXTENT = 12000
-
-function SwarmEnvelopeLayer({
-  cards,
-  wires,
-}: {
-  cards: WorkflowCard[]
-  wires: BoardWire[]
-}) {
-  const problems = cards.filter((c) => c.kind === 'problem')
-  const ex = WIRE_CANVAS_EXTENT
-  const wh = ex * 2
-  return (
-    <svg
-      className="freeform-envelope-svg"
-      aria-hidden
-      viewBox={`${-ex} ${-ex} ${wh} ${wh}`}
-      preserveAspectRatio="xMinYMin meet"
-      width={wh}
-      height={wh}
-      style={{
-        position: 'absolute',
-        left: -ex,
-        top: -ex,
-      }}
-    >
-      <defs>
-        <linearGradient id="freeform-envelope-water" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="rgba(120, 200, 255, 0.14)" />
-          <stop offset="45%" stopColor="rgba(255, 120, 110, 0.1)" />
-          <stop offset="100%" stopColor="rgba(180, 230, 255, 0.12)" />
-        </linearGradient>
-      </defs>
-      {problems.map((p) => {
-        if (swarmMassForProblem(p.id, cards, wires) === 0) return null
-        const u = swarmUnionBounds(p.id, cards, wires)
-        if (!u) return null
-        const pad = problemEnvelopePad(p)
-        const x = u.minX - pad
-        const y = u.minY - pad
-        const w = u.maxX - u.minX + pad * 2
-        const h = u.maxY - u.minY + pad * 2
-        const rx = Math.min(44, w * 0.14, h * 0.14)
-        return (
-          <rect
-            key={p.id}
-            className="freeform-swarm-envelope-rect"
-            x={x}
-            y={y}
-            width={w}
-            height={h}
-            rx={rx}
-            ry={rx}
-            fill="url(#freeform-envelope-water)"
+        {selectedProblem ? (
+          <ProblemSwarmInspector
+            title={selectedProblem.title}
+            agentCount={selectedProblemAgents.length}
+            roomId={selectedProblem.butlerRoomId}
+            lastRunId={selectedProblem.lastSwarmRunId}
+            bridgeHealth={bridgeHealth}
+            template={launchTemplate}
+            templateOptions={SWARM_TEMPLATE_OPTIONS}
+            objective={launchObjective}
+            roomWidth={selectedProblemRoomWidth}
+            roomHeight={selectedProblemRoomHeight}
+            membranePad={selectedProblemEnvelopePad}
+            cardWidth={selectedProblemAgentWidth}
+            runs={visibleRuns}
+            currentRunId={currentRunId}
+            currentRunReport={currentRunReport}
+            reportBusy={currentRunReportBusy}
+            launchBusy={launchBusy}
+            stopBusy={stopBusy}
+            onTemplateChange={setLaunchTemplate}
+            onObjectiveChange={setLaunchObjective}
+            onRoomWidthChange={(value) => {
+              const nextWidth = clampNumber(value, 160, 720)
+              updateSelectedProblemLayout((problem) => ({
+                ...problem,
+                width: nextWidth,
+                problemBaseWidth: nextWidth,
+              }))
+            }}
+            onRoomHeightChange={(value) => {
+              const nextHeight = clampNumber(value, 100, 520)
+              updateSelectedProblemLayout((problem) => ({
+                ...problem,
+                height: nextHeight,
+                problemBaseHeight: nextHeight,
+              }))
+            }}
+            onMembranePadChange={(value) => {
+              const nextPad = clampNumber(value, 0, 120)
+              updateSelectedProblemLayout((problem) => ({
+                ...problem,
+                swarmEnvelopePad: nextPad,
+              }))
+            }}
+            onCardWidthChange={(value) => {
+              const nextWidth = clampNumber(value, 96, 260)
+              updateSelectedProblemLayout((problem) => ({
+                ...problem,
+                swarmAgentMinWidth: nextWidth,
+              }))
+            }}
+            onLaunch={() => {
+              void launchSelectedProblemSwarm()
+            }}
+            onStopRun={() => {
+              void stopCurrentSwarmRun()
+            }}
+            onRefreshRuns={() => {
+              void refreshRuns(false)
+            }}
+            onSelectRun={setCurrentRunId}
           />
-        )
-      })}
-    </svg>
-  )
-}
-
-type CardViewProps = {
-  card: WorkflowCard
-  cards: WorkflowCard[]
-  wires: BoardWire[]
-  handshakeFocus: { agentId: string; problemId: string } | null
-  selected: boolean
-  camera: BoardCamera
-  onSelect: (shiftKey?: boolean) => void
-  onMove: (x: number, y: number) => void
-  onResize: (width: number, height: number) => void
-  onDragEnd: () => void
-  onToggleExpand: () => void
-  onReleaseNod: (agentId: string, which: 'specialist' | 'lead') => void
-  /** Agent only: expand + grow body for reading when user clicks the body (not header). */
-  onMakeAgentReadable?: () => void
-  /** Pause hub overlap ejection while this card is being moved or resized. */
-  onMarkUserMovingCard?: () => void
-  /** First contact on card — pause overlap sim before drag/selection handlers run. */
-  onCardPointerSession?: () => void
-  /** Dev trace for pointer/selection routing. */
-  onTrace?: (label: string, detail: string) => void
-}
-
-function OpenQuestionsBlock({ items }: { items: string[] }) {
-  if (items.length === 0) return null
-  return (
-    <div className="freeform-open-questions" role="status" aria-live="polite">
-      <div className="freeform-open-questions-title">Open questions — check and steer</div>
-      <ul className="freeform-open-questions-list">
-        {items.map((q, i) => (
-          <li key={i}>{q}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function WorkflowCardView({
-  card,
-  cards,
-  wires,
-  handshakeFocus,
-  selected,
-  camera,
-  onSelect,
-  onMove,
-  onResize,
-  onDragEnd,
-  onToggleExpand,
-  onReleaseNod,
-  onMakeAgentReadable,
-  onMarkUserMovingCard,
-  onCardPointerSession,
-  onTrace,
-}: CardViewProps) {
-  const drag = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null)
-  const resize = useRef<{ sx: number; sy: number; w: number; h: number } | null>(null)
-  const agentDragHandleRef = useRef<HTMLDivElement>(null)
-
-  const onAgentBodyPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return
-    const el = pointerEventTargetEl(e)
-    if (!el) return
-    if (el.closest('button, a, [role="button"]')) return
-    onTrace?.('card.body.pointerdown', `${card.id} body`)
-    e.stopPropagation()
-    if (selected) {
-      onCardPointerSession?.()
-      onMarkUserMovingCard?.()
-      drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-      return
-    }
-    onMakeAgentReadable?.()
-  }
-
-  /** Problem / surface: whole header drags; selection comes from card capture. */
-  const onHeaderPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 || resize.current) return
-    const el = pointerEventTargetEl(e)
-    if (!el) return
-    onTrace?.('card.header.pointerdown', `${card.id} header`)
-    e.stopPropagation()
-    onCardPointerSession?.()
-    onMarkUserMovingCard?.()
-    drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
-    if (el instanceof HTMLElement) {
-      el.setPointerCapture(e.pointerId)
-    }
-  }
-
-  const onAgentHeaderPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 || resize.current) return
-    const el = pointerEventTargetEl(e)
-    if (!el) return
-    onTrace?.('card.agentHeader.pointerdown', `${card.id} agent-header`)
-    e.stopPropagation()
-    onCardPointerSession?.()
-    onMarkUserMovingCard?.()
-    if (el.closest('.freeform-agent-drag-handle') && agentDragHandleRef.current) {
-      drag.current = { sx: e.clientX, sy: e.clientY, cx: card.x, cy: card.y }
-      agentDragHandleRef.current.setPointerCapture(e.pointerId)
-    }
-  }
-
-  const selectNow = (shiftKey?: boolean) => {
-    flushSync(() => onSelect(shiftKey))
-  }
-
-  /** Pointer-down on a card selects it. Empty-canvas pointer-down starts marquee. */
-  const shouldIgnoreSelectTarget = (el: Element | null) => {
-    if (!el) return true
-    if (el.closest('button, a, [role="button"]')) return true
-    if (el.closest('.freeform-card-resize-handle')) return true
-    return false
-  }
-
-  const onCardPointerDownCapture = (e: React.PointerEvent) => {
-    if (e.button !== 0) return
-    const el = pointerEventTargetEl(e)
-    if (shouldIgnoreSelectTarget(el)) {
-      onTrace?.('card.pointerdown.capture', `${card.id} ignored target`)
-      return
-    }
-    if (selected && !e.shiftKey) {
-      onTrace?.('card.pointerdown.capture', `${card.id} keep selection`)
-      return
-    }
-    onTrace?.('card.pointerdown.capture', `${card.id}${e.shiftKey ? ' shift' : ''}`)
-    selectNow(e.shiftKey)
-  }
-
-  const onHeaderPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current) return
-    const z = camera.zoom
-    const dx = (e.clientX - drag.current.sx) / z
-    const dy = (e.clientY - drag.current.sy) / z
-    onMove(drag.current.cx + dx, drag.current.cy + dy)
-  }
-
-  const onHeaderPointerUp = () => {
-    const wasDragging = drag.current !== null
-    drag.current = null
-    if (wasDragging) onDragEnd()
-  }
-
-  const onResizePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return
-    e.stopPropagation()
-    onCardPointerSession?.()
-    onMarkUserMovingCard?.()
-    selectNow(e.shiftKey)
-    const h = card.expanded ? card.height : 44
-    resize.current = { sx: e.clientX, sy: e.clientY, w: card.width, h }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-  }
-
-  const onResizePointerMove = (e: React.PointerEvent) => {
-    if (!resize.current) return
-    const z = camera.zoom
-    const dx = (e.clientX - resize.current.sx) / z
-    const dy = (e.clientY - resize.current.sy) / z
-    const minW = 120
-    if (card.expanded) {
-      const minH = 80
-      onResize(
-        Math.max(minW, resize.current.w + dx),
-        Math.max(minH, resize.current.h + dy),
-      )
-    } else {
-      onResize(Math.max(minW, resize.current.w + dx), card.height)
-    }
-  }
-
-  const onResizePointerUp = () => {
-    const wasResizing = resize.current !== null
-    resize.current = null
-    if (wasResizing) onDragEnd()
-  }
-
-  const kindClass =
-    card.kind === 'problem' ? ' kind-problem' : card.kind === 'agent' ? ' kind-agent' : ''
-
-  const assignedAgents =
-    card.kind === 'problem'
-      ? cards.filter(
-          (a) => a.kind === 'agent' && a.assignedToProblemId === card.id && !a.parentAgentId,
-        )
-      : []
-
-  const subagentCount = card.kind === 'agent' ? countSubagents(card.id, cards) : 0
-  const subtreeNeedsHelp =
-    card.kind === 'agent' && descendantHasOpenQuestions(card.id, cards, wires)
-
-  const assignedClass =
-    card.kind === 'agent' && (card.assignedToProblemId || card.parentAgentId)
-      ? ' assigned freeform-agent-kanban-dock'
-      : ''
-  const nestedClass = card.kind === 'agent' && card.parentAgentId ? ' freeform-agent-nested' : ''
-  const subtreeClass = subtreeNeedsHelp ? ' freeform-agent-subtree-needs-help' : ''
-
-  const swarmMass =
-    card.kind === 'problem' ? swarmMassForProblem(card.id, cards, wires) : 0
-
-  const assignedProblem =
-    card.kind === 'agent' && card.assignedToProblemId
-      ? cards.find((p) => p.id === card.assignedToProblemId)
-      : undefined
-
-  const handshakeProblem = assignedProblem
-  const handshakePulse =
-    !!handshakeFocus &&
-    handshakeFocus.agentId === card.id &&
-    handshakeProblem &&
-    handshakeFocus.problemId === handshakeProblem.id
-
-  const opens = openQuestionsForCard(card, cards, wires)
-  const hasOpenQuestions = opens.length > 0
-  const isAgent = card.kind === 'agent'
-  const agentQuestionGlow = isAgent && hasOpenQuestions
-  /** Blue = pool/prepared, green = in swarm/working, orange = open questions (matches toolbar legend). */
-  const agentInSwarm =
-    isAgent && !agentQuestionGlow && (!!card.assignedToProblemId || !!card.parentAgentId)
-  const agentGlowClass = agentQuestionGlow
-    ? ' freeform-agent-glow-questions'
-    : agentInSwarm
-      ? ' freeform-agent-glow-working'
-      : isAgent
-        ? ' freeform-agent-glow-prepared'
-        : ''
-  const swarmLinked = isAgent && (!!card.assignedToProblemId || !!card.parentAgentId)
-  const showGlobalOpenFlash = hasOpenQuestions && !isAgent
-  const problemBubble = card.kind === 'problem' && card.problemShape === 'bubble'
-
-  const titleFrameClass =
-    card.kind === 'agent'
-      ? 'freeform-card-title-frame freeform-card-title-frame--agent'
-      : card.kind === 'problem'
-        ? 'freeform-card-title-frame freeform-card-title-frame--problem'
-        : 'freeform-card-title-frame freeform-card-title-frame--surface'
-
-  return (
-    <div
-      data-board-card={card.id}
-      className={`freeform-card${kindClass}${assignedClass}${nestedClass}${subtreeClass}${
-        problemBubble ? ' freeform-problem-bubble' : ''
-      }${card.kind === 'problem' && swarmMass > 0 ? ' freeform-problem-swarm-active' : ''}${
-        swarmLinked ? ' freeform-agent-swarm-linked' : ''
-      }${selected ? ' selected' : ''}${showGlobalOpenFlash ? ' has-open-questions' : ''}${agentGlowClass}${
-        card.expanded ? '' : ' collapsed'
-      }`}
-      style={{
-        left: card.x,
-        top: card.y,
-        width: card.width,
-        height: card.expanded ? card.height : 44,
-      }}
-      onPointerDownCapture={onCardPointerDownCapture}
-      onPointerDown={(e) => {
-        e.stopPropagation()
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation()
-        onToggleExpand()
-      }}
-    >
-      {card.kind === 'agent' ? (
-        <div className="freeform-card-header freeform-card-header--agent" onPointerDown={onAgentHeaderPointerDown}>
-          <div
-            ref={agentDragHandleRef}
-            className="freeform-agent-drag-handle"
-            onPointerMove={onHeaderPointerMove}
-            onPointerUp={onHeaderPointerUp}
-            onPointerCancel={onHeaderPointerUp}
-          >
-            <span className="freeform-card-dot" style={{ background: card.color }} />
-            <span className={titleFrameClass}>
-              <span className="freeform-card-title">{card.title}</span>
-            </span>
-            {selected ? <span className="freeform-selection-badge">Selected</span> : null}
-            {subagentCount > 0 ? (
-              <span
-                className="freeform-subagent-count-badge"
-                title="Subagents nested under this board — drop more boards here to add capacity"
-              >
-                ↳{subagentCount}
-              </span>
-            ) : null}
-          </div>
-          {hasOpenQuestions && !card.expanded ? (
-            <span
-              className={`freeform-open-pin${isAgent ? ' freeform-open-pin-agent' : ''}`}
-              title="Open questions — expand card"
-            >
-              ?
-            </span>
-          ) : null}
-        </div>
-      ) : (
-        <div
-          className="freeform-card-header"
-          onPointerDown={onHeaderPointerDown}
-          onPointerMove={onHeaderPointerMove}
-          onPointerUp={onHeaderPointerUp}
-          onPointerCancel={onHeaderPointerUp}
-        >
-          <span className="freeform-card-dot" style={{ background: card.color }} />
-          <span className={titleFrameClass}>
-            <span className="freeform-card-title">{card.title}</span>
-          </span>
-          {selected ? <span className="freeform-selection-badge">Selected</span> : null}
-          {card.kind === 'problem' && swarmMass > 0 ? (
-            <span className="freeform-swarm-mass-badge" title="Swarm mass — specialists on this hub">
-              ×{swarmMass}
-            </span>
-          ) : null}
-          {hasOpenQuestions && !card.expanded ? (
-            <span
-              className={`freeform-open-pin${isAgent ? ' freeform-open-pin-agent' : ''}`}
-              title="Open questions — expand card"
-            >
-              ?
-            </span>
-          ) : null}
-        </div>
-      )}
-      {card.expanded ? (
-        <div
-          className={`freeform-card-body${card.kind === 'agent' ? ' freeform-card-body--agent' : ''}`}
-          onPointerDown={card.kind === 'agent' ? onAgentBodyPointerDown : undefined}
-          onPointerMove={card.kind === 'agent' ? onHeaderPointerMove : undefined}
-          onPointerUp={card.kind === 'agent' ? onHeaderPointerUp : undefined}
-          onPointerCancel={card.kind === 'agent' ? onHeaderPointerUp : undefined}
-        >
-          {card.kind === 'problem' ? (
-            <>
-              <OpenQuestionsBlock items={opens} />
-              {card.mission ? (
-                <div
-                  style={{
-                    marginBottom: 10,
-                    fontSize: '0.78rem',
-                    lineHeight: 1.48,
-                    color: 'rgba(255,255,255,0.78)',
-                  }}
-                >
-                  {card.mission.split(/\n\n+/).map((para, i) => (
-                    <p key={i} style={{ margin: i === 0 ? '0 0 0.55em' : '0.55em 0 0' }}>
-                      {para}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ margin: '0 0 8px' }}>
-                  Keep the goal, constraints, and next decision here. Drop agents into this problem
-                  and the swarm forms around the bottleneck automatically.
-                </p>
-              )}
-              {assignedAgents.length ? (
-                <div>
-                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', marginBottom: 6 }}>
-                    Combined agents
-                  </div>
-                  {assignedAgents.map((a) => (
-                    <div key={a.id} className="freeform-agent-pill freeform-agent-pill-with-actions">
-                      <span className="dot" style={{ background: a.color }} />
-                      <span className="freeform-agent-pill-label">
-                        {a.title}
-                      </span>
-                      <button
-                        type="button"
-                        className={`freeform-mini-btn${a.releaseNodFromLead ? ' is-on' : ''}`}
-                        title="Lead agrees this marble can leave the sack (needs specialist nod too)"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onReleaseNod(a.id, 'lead')
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      >
-                        {a.releaseNodFromLead ? 'Lead ✓ release' : 'Lead: release'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ margin: 0, color: 'rgba(255,255,255,0.38)' }}>
-                  No agents in the swarm yet. Double-click empty space to summon one, then drop it
-                  into this bubble and let the envelope pull it in.
-                </p>
-              )}
-              {assignedAgents.length > 0 ? (
-                <div className="freeform-swarm-loop">
-                  <div className="freeform-swarm-loop-title">Swarm loop</div>
-                  <p>
-                    Agents attack the bottleneck in parallel, reconnect to the whole problem after
-                    each chunk, and surface you only when they hit a real decision.
-                  </p>
-                </div>
-              ) : null}
-              {assignedAgents.length > 0 ? (
-                <div
-                  className={`freeform-problem-lead-brief${
-                    handshakeFocus?.problemId === card.id ? ' is-pulse' : ''
-                  }`}
-                >
-                  <strong>Lead loop</strong> — Keep the swarm pointed at the choke point, then eject
-                  finished agents back to the surface so they are ready for the next problem.
-                </div>
-              ) : null}
-            </>
-          ) : card.kind === 'agent' ? (
-            <>
-              <OpenQuestionsBlock items={opens} />
-              <p style={{ margin: '0 0 8px' }}>
-                {card.parentAgentId
-                  ? (() => {
-                      const par = cards.find(
-                        (x) => x.id === card.parentAgentId && x.kind === 'agent',
-                      )
-                      const parName = par?.title ?? 'parent board'
-                      return assignedProblem
-                        ? `Nested under “${parName}” inside “${assignedProblem.title}” — stay in the swarm until the lead releases you.`
-                        : `Nested under “${parName}” — drag free when this branch is done.`
-                    })()
-                  : assignedProblem
-                    ? `Working inside “${assignedProblem.title}” — overlap another agent to grow a sub-swarm, or peel out when the work is done.`
-                    : 'Free marble — drag this into any problem bubble to deploy it.'}
-              </p>
-              {!assignedProblem && card.lastProjectRecall ? (
-                <p className="freeform-recall-line">{card.lastProjectRecall}</p>
-              ) : null}
-              {assignedProblem ? (
-                <div className="freeform-release-row">
-                  <button
-                    type="button"
-                    className={`freeform-mini-btn${card.releaseNodFromSpecialist ? ' is-on' : ''}`}
-                    title="No useful work left — needs lead nod to leave the sack"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onReleaseNod(card.id, 'specialist')
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    {card.releaseNodFromSpecialist ? '✓ I’m done here' : 'I’m done — no useful work'}
-                  </button>
-                  {card.releaseNodFromSpecialist && !card.releaseNodFromLead ? (
-                    <span className="freeform-release-hint">Waiting for lead release on problem…</span>
-                  ) : null}
-                </div>
-              ) : null}
-              {handshakeProblem ? (
-                <div
-                  className={`freeform-connect-handshake${handshakePulse ? ' is-pulse' : ''}`}
-                  role="status"
-                >
-                  <p className="freeform-handshake-line">
-                    <span className="freeform-handshake-role">Swarm</span>
-                    Deployed into “{handshakeProblem.title}”.
-                  </p>
-                  <p className="freeform-handshake-line">
-                    <span className="freeform-handshake-role">Lead</span>
-                    Attack the current bottleneck, sync back to the whole goal when your chunk lands,
-                    and escalate only when you hit a decision that needs oversight.
-                  </p>
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <OpenQuestionsBlock items={opens} />
-              <p style={{ margin: 0 }}>
-                Generic surface for notes and links. Problems and agents use swarm combine rules
-                above.
-              </p>
-            </>
-          )}
-          <p style={{ margin: '10px 0 0', fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>
-            {card.kind === 'agent'
-              ? 'Drag the top strip to move. Click the body to open it up. Double-click to collapse.'
-              : 'Drag the header to move. Double-click to collapse.'}
-          </p>
-        </div>
-      ) : null}
-      <div
-        className="freeform-card-resize-handle"
-        title="Resize"
-        aria-label="Resize card"
-        onPointerDown={onResizePointerDown}
-        onPointerMove={onResizePointerMove}
-        onPointerUp={onResizePointerUp}
-        onPointerCancel={onResizePointerUp}
-      />
+        ) : null}
+      </div>
     </div>
   )
 }

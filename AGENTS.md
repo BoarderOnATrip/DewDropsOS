@@ -15,7 +15,8 @@
 
 | Area | Rationale |
 |------|------------|
-| **Pure TS extraction** from `BoardView.tsx` → `src/freeform/*.ts` (layout, overlap, assignment helpers) | Shrinks merge target; easy to test in isolation. *(Done so far: `kanbanGeometry`, `viewportGeometry`, `problemOverlapEjection`, `swarmAgents` + matching `*.test.ts`.)* |
+| **Pure TS extraction** from `BoardView.tsx` → `src/freeform/*.ts` (layout, overlap, assignment helpers) | Shrinks merge target; easy to test in isolation. *(Done so far: `kanbanGeometry`, `viewportGeometry`, `problemOverlapEjection`, `swarmAgents`, `cardOverlap`, `kanbanReflow`, `openQuestions`, `releaseNod`, `boardObjective`, `boardTouch`, `runFormat`, `pointerDom` + matching `*.test.ts`.)* |
+| **Board UI components** → `src/freeform/components/*` | Card/envelope JSX split out of `BoardView.tsx` (`WorkflowCardView`, `OpenQuestionsBlock`, `SwarmEnvelopeLayer`). |
 | **Unit tests** (`*.test.ts`), **Vitest** config, **CI** workflows | Keeps Codex free for feature wiring. |
 | **ESLint / tsconfig** hygiene that applies repo-wide | Low product opinion, high consistency. |
 | **Accessibility** (keyboard, `aria-*`, focus) on existing UI | Incremental, review-friendly patches. |
@@ -39,12 +40,12 @@
 
 ---
 
-## `src/freeform/BoardView.tsx` (~2k lines)
+## `src/freeform/BoardView.tsx` (~1.6k lines; card UI in `components/`)
 
 **Hot zone.** Parallel edits here cause painful merges.
 
-- **Cursor** should **reduce** this file (extract hooks, `WorkflowCardView`, math modules) **before** or **instead of** Codex growing it further.
-- **Codex** should **prefer new files** (`src/freeform/components/*`, `src/freeform/hooks/*`) and **thin imports** into `BoardView` over pasting hundreds of lines inline.
+- **Cursor** should **reduce** this file (extract hooks, more panels, math modules) **before** or **instead of** Codex growing it further.
+- **Codex** should **prefer new files** (`src/freeform/components/*` — e.g. new panels next to `WorkflowCardView`, `SwarmEnvelopeLayer`), `src/freeform/hooks/*`, and **thin imports** into `BoardView` over pasting hundreds of lines inline.
 
 If both must touch `BoardView` in one iteration: **Codex** takes **toolbar + new panels**; **Cursor** takes **extract + tests** in the **same PR with agreed order** (extract first, then feature), or **stop one agent** until the other lands.
 

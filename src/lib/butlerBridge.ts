@@ -62,6 +62,13 @@ export type ButlerSwarmRun = {
   agent_states?: ButlerSwarmRunAgent[]
 }
 
+export type ButlerSwarmRunReport = {
+  run_id: string
+  report_path: string
+  exists: boolean
+  content?: string
+}
+
 export type ButlerUiTraceEvent = {
   surface?: string
   label: string
@@ -230,6 +237,44 @@ export async function listSwarmRuns(
     },
   )
   return Array.isArray(result.runs) ? result.runs : []
+}
+
+export async function getSwarmRunReport(
+  settings: ButlerBridgeSettings,
+  runId: string,
+): Promise<ButlerSwarmRunReport> {
+  const result = await bridgeRequest<{ report?: ButlerSwarmRunReport }>(
+    settings,
+    `/swarm/runs/${encodeURIComponent(runId)}/report`,
+    {
+      headers: bridgeHeaders(settings, false),
+    },
+  )
+  if (!result.report) {
+    throw new Error('Bridge returned no swarm run report.')
+  }
+  return result.report
+}
+
+export async function stopSwarmRun(
+  settings: ButlerBridgeSettings,
+  runId: string,
+): Promise<ButlerSwarmRun> {
+  const result = await bridgeRequest<{ run?: ButlerSwarmRun }>(
+    settings,
+    `/swarm/runs/${encodeURIComponent(runId)}/stop`,
+    {
+      method: 'POST',
+      headers: bridgeHeaders(settings),
+      body: JSON.stringify({
+        created_by: 'dewdrops',
+      }),
+    },
+  )
+  if (!result.run) {
+    throw new Error('Bridge returned no stopped swarm run.')
+  }
+  return result.run
 }
 
 export async function sendUiTraceEvent(
