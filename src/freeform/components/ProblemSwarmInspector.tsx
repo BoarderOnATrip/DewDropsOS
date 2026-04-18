@@ -5,6 +5,9 @@ import type {
   ButlerSwarmRunReport,
   ButlerSwarmTemplate,
 } from '../../lib/butlerBridge'
+import type { SessionReadinessItem, SessionReadinessTone } from '../sessionReadiness'
+import type { ButlerLaunchSurface, DewDropsWorkspaceMode, MemoryPalaceLocus } from '../types'
+import { memoryPalaceKindLabel } from '../visualMemoryPalace'
 import { formatRunStatus, swarmRunIsActive } from '../runFormat'
 import { SwarmRunList } from './SwarmRunList'
 
@@ -13,12 +16,22 @@ type TemplateOption = {
   label: string
 }
 
+type Option<T extends string> = {
+  value: T
+  label: string
+  detail: string
+}
+
 type ProblemSwarmInspectorProps = {
   title: string
   agentCount: number
   roomId?: string
   lastRunId?: string
   bridgeHealth: ButlerBridgeHealth | null
+  workspaceMode: DewDropsWorkspaceMode
+  workspaceOptions: Array<Option<DewDropsWorkspaceMode>>
+  launchSurface: ButlerLaunchSurface
+  launchSurfaceOptions: Array<Option<ButlerLaunchSurface>>
   template: ButlerSwarmTemplate
   templateOptions: TemplateOption[]
   objective: string
@@ -26,18 +39,47 @@ type ProblemSwarmInspectorProps = {
   roomHeight: number
   membranePad: number
   cardWidth: number
+  memoryWing: string
+  memoryWingPlaceholder: string
+  memoryRoom: string
+  memoryRoomPlaceholder: string
+  memorySummary: string
+  memorySummaryPlaceholder: string
+  memoryAnchors: string
+  memoryPalaceDraft: string
+  memoryPalaceLoci: MemoryPalaceLocus[]
+  phoneBrief: string
+  desktopBrief: string
+  readinessTone: SessionReadinessTone
+  readinessLabel: string
+  readinessSummary: string
+  readinessItems: SessionReadinessItem[]
+  handoffLines: string[]
+  handoffText: string
   runs: ButlerSwarmRun[]
   currentRunId?: string
   currentRunReport: ButlerSwarmRunReport | null
   reportBusy: boolean
   launchBusy: boolean
   stopBusy: boolean
+  onWorkspaceModeChange: (value: DewDropsWorkspaceMode) => void
+  onLaunchSurfaceChange: (value: ButlerLaunchSurface) => void
   onTemplateChange: (value: ButlerSwarmTemplate) => void
   onObjectiveChange: (value: string) => void
   onRoomWidthChange: (value: number) => void
   onRoomHeightChange: (value: number) => void
   onMembranePadChange: (value: number) => void
   onCardWidthChange: (value: number) => void
+  onMemoryWingChange: (value: string) => void
+  onMemoryRoomChange: (value: string) => void
+  onMemorySummaryChange: (value: string) => void
+  onMemoryAnchorsChange: (value: string) => void
+  onMemoryPalaceDraftChange: (value: string) => void
+  onPhoneBriefChange: (value: string) => void
+  onDesktopBriefChange: (value: string) => void
+  onCopyPacket: () => void
+  onCopyObjective: () => void
+  onCopyLaunchBrief: () => void
   onLaunch: () => void
   onStopRun: () => void
   onRefreshRuns: () => void
@@ -56,6 +98,10 @@ export function ProblemSwarmInspector({
   roomId,
   lastRunId,
   bridgeHealth,
+  workspaceMode,
+  workspaceOptions,
+  launchSurface,
+  launchSurfaceOptions,
   template,
   templateOptions,
   objective,
@@ -63,18 +109,47 @@ export function ProblemSwarmInspector({
   roomHeight,
   membranePad,
   cardWidth,
+  memoryWing,
+  memoryWingPlaceholder,
+  memoryRoom,
+  memoryRoomPlaceholder,
+  memorySummary,
+  memorySummaryPlaceholder,
+  memoryAnchors,
+  memoryPalaceDraft,
+  memoryPalaceLoci,
+  phoneBrief,
+  desktopBrief,
+  readinessTone,
+  readinessLabel,
+  readinessSummary,
+  readinessItems,
+  handoffLines,
+  handoffText,
   runs,
   currentRunId,
   currentRunReport,
   reportBusy,
   launchBusy,
   stopBusy,
+  onWorkspaceModeChange,
+  onLaunchSurfaceChange,
   onTemplateChange,
   onObjectiveChange,
   onRoomWidthChange,
   onRoomHeightChange,
   onMembranePadChange,
   onCardWidthChange,
+  onMemoryWingChange,
+  onMemoryRoomChange,
+  onMemorySummaryChange,
+  onMemoryAnchorsChange,
+  onMemoryPalaceDraftChange,
+  onPhoneBriefChange,
+  onDesktopBriefChange,
+  onCopyPacket,
+  onCopyObjective,
+  onCopyLaunchBrief,
   onLaunch,
   onStopRun,
   onRefreshRuns,
@@ -83,6 +158,8 @@ export function ProblemSwarmInspector({
   const currentRun = runs.find((run) => run.id === currentRunId || run.run_id === currentRunId) ?? null
   const preview = reportPreview(currentRunReport?.content)
   const currentRunActive = swarmRunIsActive(currentRun?.status)
+  const workspaceOption = workspaceOptions.find((option) => option.value === workspaceMode)
+  const launchSurfaceOption = launchSurfaceOptions.find((option) => option.value === launchSurface)
 
   return (
     <aside className="freeform-problem-inspector" aria-label="Selected problem swarm inspector">
@@ -99,6 +176,62 @@ export function ProblemSwarmInspector({
             {bridgeHealth?.ok ? 'bridge online' : 'bridge offline'}
           </span>
           {lastRunId ? <span className="freeform-run-pill">last {lastRunId.slice(-6)}</span> : null}
+        </div>
+      </div>
+
+      <div className="freeform-problem-inspector-section">
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Session surface</h3>
+            <p>Switch between heavy desktop execution, phone relay, and memory-palace review.</p>
+          </div>
+        </div>
+        <div className="freeform-problem-inspector-grid">
+          <label className="freeform-field">
+            <span>Workspace mode</span>
+            <select
+              value={workspaceMode}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                onWorkspaceModeChange(e.target.value as DewDropsWorkspaceMode)
+              }
+            >
+              {workspaceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="freeform-field">
+            <span>Launch surface</span>
+            <select
+              value={launchSurface}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                onLaunchSurfaceChange(e.target.value as ButlerLaunchSurface)
+              }
+            >
+              {launchSurfaceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="freeform-mode-chip-row" aria-label="Current session posture">
+          {workspaceOption ? (
+            <div className="freeform-mode-chip">
+              <strong>{workspaceOption.label}</strong>
+              <span>{workspaceOption.detail}</span>
+            </div>
+          ) : null}
+          {launchSurfaceOption ? (
+            <div className="freeform-mode-chip">
+              <strong>{launchSurfaceOption.label}</strong>
+              <span>{launchSurfaceOption.detail}</span>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -128,7 +261,9 @@ export function ProblemSwarmInspector({
             max={720}
             step={10}
             value={roomWidth}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => onRoomWidthChange(e.target.valueAsNumber || roomWidth)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              onRoomWidthChange(e.target.valueAsNumber || roomWidth)
+            }
           />
         </label>
 
@@ -140,7 +275,9 @@ export function ProblemSwarmInspector({
             max={520}
             step={10}
             value={roomHeight}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => onRoomHeightChange(e.target.valueAsNumber || roomHeight)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              onRoomHeightChange(e.target.valueAsNumber || roomHeight)
+            }
           />
         </label>
 
@@ -166,9 +303,139 @@ export function ProblemSwarmInspector({
             max={260}
             step={8}
             value={cardWidth}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => onCardWidthChange(e.target.valueAsNumber || cardWidth)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              onCardWidthChange(e.target.valueAsNumber || cardWidth)
+            }
           />
         </label>
+      </div>
+
+      <div className="freeform-problem-inspector-section">
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Memory palace context</h3>
+            <p>Bind this room to a Lifegirdle wing, room, and anchor set before launching work.</p>
+          </div>
+        </div>
+        <div className="freeform-problem-inspector-grid">
+          <label className="freeform-field">
+            <span>Memory wing</span>
+            <input
+              type="text"
+              value={memoryWing}
+              placeholder={memoryWingPlaceholder}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => onMemoryWingChange(e.target.value)}
+            />
+          </label>
+          <label className="freeform-field">
+            <span>Memory room</span>
+            <input
+              type="text"
+              value={memoryRoom}
+              placeholder={memoryRoomPlaceholder}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => onMemoryRoomChange(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <label className="freeform-field">
+          <span>Context summary</span>
+          <textarea
+            value={memorySummary}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onMemorySummaryChange(e.target.value)}
+            placeholder={memorySummaryPlaceholder}
+            rows={3}
+          />
+        </label>
+
+        <label className="freeform-field">
+          <span>Anchor refs</span>
+          <input
+            type="text"
+            value={memoryAnchors}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onMemoryAnchorsChange(e.target.value)}
+            placeholder="drawer/roadmap, entity/tyler, room/phone-relay"
+          />
+        </label>
+
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Visual palace scaffold</h3>
+            <p>Stage the current context as visual loci so the room holds information, not just notes.</p>
+          </div>
+          <span className="freeform-run-pill">{memoryPalaceLoci.length} loci</span>
+        </div>
+        <div className="freeform-memory-palace-grid" aria-label="Visual memory palace loci">
+          {memoryPalaceLoci.map((locus) => (
+            <article key={locus.id} className={`freeform-memory-palace-card is-${locus.kind}`}>
+              <span className="freeform-session-pill">{memoryPalaceKindLabel(locus.kind)}</span>
+              <strong>{locus.title}</strong>
+              <p>{locus.detail}</p>
+            </article>
+          ))}
+        </div>
+
+        <label className="freeform-field">
+          <span>Visual loci</span>
+          <textarea
+            value={memoryPalaceDraft}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onMemoryPalaceDraftChange(e.target.value)}
+            placeholder="North Star | north_star | Keep the user goal visible.\nScreening Bay | room | Phone triage and approvals.\nRoadmap Drawer | artifact | drawer/roadmap"
+            rows={5}
+          />
+        </label>
+        <p className="freeform-toolbar-panel-hint">
+          One locus per line using `title | kind | detail`. Kinds: `north_star`, `room`, `portal`, `artifact`, `checkpoint`.
+        </p>
+      </div>
+
+      <div className="freeform-problem-inspector-section">
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Device briefs</h3>
+            <p>Give Butler a short phone relay brief and a heavier desktop execution brief.</p>
+          </div>
+        </div>
+        <label className="freeform-field">
+          <span>Phone brief</span>
+          <textarea
+            value={phoneBrief}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onPhoneBriefChange(e.target.value)}
+            placeholder="Capture, screen, and escalate only urgent decisions."
+            rows={3}
+          />
+        </label>
+        <label className="freeform-field">
+          <span>Desktop brief</span>
+          <textarea
+            value={desktopBrief}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onDesktopBriefChange(e.target.value)}
+            placeholder="Use the full desktop session for long build loops, deep review, and synthesis."
+            rows={3}
+          />
+        </label>
+      </div>
+
+      <div className="freeform-problem-inspector-section">
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Session readiness</h3>
+            <p>Real launch blockers and loose ends for this room.</p>
+          </div>
+          <span className={`freeform-session-pill is-${readinessTone}`}>{readinessLabel}</span>
+        </div>
+        <p className="freeform-toolbar-panel-hint">{readinessSummary}</p>
+        <ul className="freeform-readiness-list">
+          {readinessItems.map((entry) => (
+            <li key={entry.id} className={`freeform-readiness-item is-${entry.tone}`}>
+              <div className="freeform-readiness-item-head">
+                <strong>{entry.label}</strong>
+                <span className={`freeform-session-pill is-${entry.tone}`}>{entry.statusLabel}</span>
+              </div>
+              <span>{entry.detail}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       <label className="freeform-field">
@@ -182,6 +449,42 @@ export function ProblemSwarmInspector({
         />
       </label>
 
+      <div className="freeform-problem-inspector-section">
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Handoff packet</h3>
+            <p>The packet Butler sees when this room launches across devices and sessions.</p>
+          </div>
+          <span className="freeform-run-pill">{handoffText.split('\n').length} lines</span>
+        </div>
+        <ul className="freeform-packet-list">
+          {handoffLines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <div className="freeform-toolbar-panel-actions">
+          <button type="button" className="freeform-btn freeform-btn--tool" onClick={onCopyPacket}>
+            Copy packet
+          </button>
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={onCopyObjective}
+            disabled={!objective.trim()}
+          >
+            Copy objective
+          </button>
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={onCopyLaunchBrief}
+            disabled={!objective.trim()}
+          >
+            Copy launch brief
+          </button>
+        </div>
+      </div>
+
       <div className="freeform-toolbar-panel-actions">
         <button
           type="button"
@@ -191,11 +494,7 @@ export function ProblemSwarmInspector({
         >
           {launchBusy ? 'Launching…' : 'Launch swarm'}
         </button>
-        <button
-          type="button"
-          className="freeform-btn freeform-btn--tool"
-          onClick={onRefreshRuns}
-        >
+        <button type="button" className="freeform-btn freeform-btn--tool" onClick={onRefreshRuns}>
           Refresh runs
         </button>
         {currentRunActive ? (

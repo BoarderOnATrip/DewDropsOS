@@ -44,6 +44,28 @@ export function bestProblemOverlap(
   return best
 }
 
+export function bestGroupProblemTarget(
+  draggedIds: ReadonlySet<string>,
+  cards: WorkflowCard[],
+): { id: string; area: number } | null {
+  const problems = cards.filter((card) => card.kind === 'problem')
+  if (problems.length === 0) return null
+
+  const totals = new Map<string, number>()
+  for (const card of cards) {
+    if (card.kind !== 'agent' || !draggedIds.has(card.id)) continue
+    const hit = bestProblemOverlap(card, problems)
+    if (!hit) continue
+    totals.set(hit.id, (totals.get(hit.id) ?? 0) + hit.area)
+  }
+
+  let best: { id: string; area: number } | null = null
+  for (const [id, area] of totals) {
+    if (!best || area > best.area) best = { id, area }
+  }
+  return best
+}
+
 export function isDescendantAgent(descId: string, ancestorId: string, cards: WorkflowCard[]): boolean {
   let cur: WorkflowCard | undefined = cards.find((c) => c.id === descId && c.kind === 'agent')
   const visited = new Set<string>()

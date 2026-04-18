@@ -1,5 +1,6 @@
 import type { ButlerSwarmTemplate, CreateSwarmContractInput } from '../lib/butlerBridge'
-import type { WorkflowCard } from './types'
+import { buildProblemSessionBlueprint } from './sessionBlueprint'
+import type { DewDropsWorkspaceMode, WorkflowCard } from './types'
 
 type SwarmAgentInput = NonNullable<CreateSwarmContractInput['agents']>[number]
 
@@ -94,10 +95,12 @@ export function buildSwarmContractAgents(
   agentCards: WorkflowCard[],
   template: ButlerSwarmTemplate,
   objective: string,
+  workspaceMode: DewDropsWorkspaceMode = 'desktop',
 ): SwarmAgentInput[] {
   if (agentCards.length === 0) return []
 
   const config = TEMPLATE_ROLE_MAP[template]
+  const blueprint = buildProblemSessionBlueprint(problem, workspaceMode)
   const ordered = [...agentCards].sort((a, b) => (a.y - b.y) || (a.x - b.x) || a.title.localeCompare(b.title))
   const roles = roleSequence(ordered.length)
   const builderIds: string[] = []
@@ -125,6 +128,7 @@ export function buildSwarmContractAgents(
         '',
         `Role: ${config.rolePrompt[role]}`,
         `DewDrops card: "${card.title}" inside problem "${problem.title}".`,
+        `Memory palace: ${blueprint.memoryWing}/${blueprint.memoryRoom}.`,
       ].join('\n'),
       depends_on: dependsOn,
       max_iterations: config.maxIterations[role],
@@ -134,6 +138,9 @@ export function buildSwarmContractAgents(
         dewdrops_card_id: card.id,
         dewdrops_problem_id: problem.id,
         dewdrops_card_title: card.title,
+        memory_wing: blueprint.memoryWing,
+        memory_room: blueprint.memoryRoom,
+        preferred_launch_surface: problem.preferredLaunchSurface ?? blueprint.launchSurface,
       },
     }
   })

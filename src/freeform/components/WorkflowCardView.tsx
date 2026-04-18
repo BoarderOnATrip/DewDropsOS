@@ -9,6 +9,15 @@ import { swarmMassForProblem } from '../swarmAgents'
 import type { BoardCamera, BoardWire, WorkflowCard } from '../types'
 import { OpenQuestionsBlock } from './OpenQuestionsBlock'
 
+export type ProblemSessionSummary = {
+  workspaceLabel: string
+  launchSurfaceLabel: string
+  memoryLabel: string
+  anchorCount: number
+  readinessLabel: string
+  readinessTone: 'ready' | 'attention' | 'missing'
+}
+
 export type CardViewProps = {
   card: WorkflowCard
   cards: WorkflowCard[]
@@ -16,6 +25,7 @@ export type CardViewProps = {
   handshakeFocus: { agentId: string; problemId: string } | null
   selected: boolean
   camera: BoardCamera
+  problemSessionSummary?: ProblemSessionSummary
   problemRunStatus?: string
   problemRunSummary?: string
   problemRunId?: string
@@ -42,6 +52,7 @@ export function WorkflowCardView({
   handshakeFocus,
   selected,
   camera,
+  problemSessionSummary,
   problemRunStatus,
   problemRunSummary,
   problemRunId,
@@ -83,10 +94,12 @@ export function WorkflowCardView({
       moved: false,
       source,
     }
-    captureEl.setPointerCapture(e.pointerId)
+    if (typeof captureEl.setPointerCapture === 'function') {
+      captureEl.setPointerCapture(e.pointerId)
+    }
   }
 
-  const onAgentBodyPointerDown = (e: PointerEvent) => {
+  const onBodyPointerDown = (e: PointerEvent) => {
     if (e.button !== 0 || resize.current) return
     const el = pointerEventTargetEl(e)
     if (!el) return
@@ -182,7 +195,9 @@ export function WorkflowCardView({
     selectNow(e.shiftKey)
     const h = card.expanded ? card.height : 44
     resize.current = { sx: e.clientX, sy: e.clientY, w: card.width, h }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    if (typeof (e.currentTarget as HTMLElement).setPointerCapture === 'function') {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    }
   }
 
   const onResizePointerMove = (e: PointerEvent) => {
@@ -351,6 +366,11 @@ export function WorkflowCardView({
               ×{swarmMass}
             </span>
           ) : null}
+          {card.kind === 'problem' && problemSessionSummary ? (
+            <span className={`freeform-session-pill is-${problemSessionSummary.readinessTone}`}>
+              {problemSessionSummary.readinessLabel}
+            </span>
+          ) : null}
           {card.kind === 'problem' && problemRunStatus ? (
             <span className={`freeform-run-pill${swarmRunIsActive(problemRunStatus) ? ' is-active' : ''}`}>
               {formatRunStatus(problemRunStatus)}
@@ -369,10 +389,10 @@ export function WorkflowCardView({
       {card.expanded ? (
         <div
           className={`freeform-card-body${card.kind === 'agent' ? ' freeform-card-body--agent' : ''}`}
-          onPointerDown={card.kind === 'agent' ? onAgentBodyPointerDown : undefined}
-          onPointerMove={card.kind === 'agent' ? onHeaderPointerMove : undefined}
-          onPointerUp={card.kind === 'agent' ? onHeaderPointerUp : undefined}
-          onPointerCancel={card.kind === 'agent' ? onHeaderPointerUp : undefined}
+          onPointerDown={onBodyPointerDown}
+          onPointerMove={onHeaderPointerMove}
+          onPointerUp={onHeaderPointerUp}
+          onPointerCancel={onHeaderPointerUp}
         >
           {card.kind === 'problem' ? (
             <>
@@ -383,6 +403,22 @@ export function WorkflowCardView({
                     {problemRunId ? <span>{problemRunId.slice(-6)}</span> : null}
                   </div>
                   <p>{problemRunSummary || 'Run launched from Butler. Report pending.'}</p>
+                </div>
+              ) : null}
+              {problemSessionSummary ? (
+                <div className="freeform-problem-session-strip">
+                  <span className="freeform-session-pill">{problemSessionSummary.workspaceLabel}</span>
+                  <span className="freeform-session-pill">{problemSessionSummary.launchSurfaceLabel}</span>
+                  <span className="freeform-session-pill">{problemSessionSummary.memoryLabel}</span>
+                  {problemSessionSummary.anchorCount > 0 ? (
+                    <span className="freeform-session-pill">
+                      {problemSessionSummary.anchorCount} anchor
+                      {problemSessionSummary.anchorCount === 1 ? '' : 's'}
+                    </span>
+                  ) : null}
+                  <span className={`freeform-session-pill is-${problemSessionSummary.readinessTone}`}>
+                    {problemSessionSummary.readinessLabel}
+                  </span>
                 </div>
               ) : null}
               <OpenQuestionsBlock items={opens} />
@@ -537,7 +573,7 @@ export function WorkflowCardView({
           <p style={{ margin: '10px 0 0', fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)' }}>
             {card.kind === 'agent'
               ? 'Drag anywhere on the marble to move it. Double-click to expand or collapse.'
-              : 'Drag the header to move. Double-click to collapse.'}
+              : 'Drag anywhere on the card to move it. Double-click to collapse.'}
           </p>
         </div>
       ) : null}

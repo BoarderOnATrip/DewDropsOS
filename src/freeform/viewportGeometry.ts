@@ -63,6 +63,44 @@ export function cardWorldBounds(c: WorkflowCard): WorldRect {
   return { l: c.x, t: c.y, r: c.x + c.width, b: c.y + h }
 }
 
+export function fitCameraToCards(
+  cards: WorkflowCard[],
+  vw: number,
+  vh: number,
+  padding = 120,
+): BoardCamera {
+  if (cards.length === 0 || vw <= 0 || vh <= 0) {
+    return { x: 0, y: 0, zoom: 1 }
+  }
+
+  const seed = cardWorldBounds(cards[0]!)
+  const bounds = cards
+    .map((card) => cardWorldBounds(card))
+    .reduce<WorldRect>(
+      (acc, rect) => ({
+        l: Math.min(acc.l, rect.l),
+        t: Math.min(acc.t, rect.t),
+        r: Math.max(acc.r, rect.r),
+        b: Math.max(acc.b, rect.b),
+      }),
+      seed,
+    )
+
+  const width = Math.max(240, bounds.r - bounds.l + padding * 2)
+  const height = Math.max(180, bounds.b - bounds.t + padding * 2)
+  const zoom = clamp(Math.min(vw / width, vh / height), 0.24, 1.12)
+
+  return {
+    x: (bounds.l + bounds.r) / 2,
+    y: (bounds.t + bounds.b) / 2,
+    zoom,
+  }
+}
+
 export function worldRectsIntersect(a: WorldRect, b: WorldRect): boolean {
   return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b)
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
 }

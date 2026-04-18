@@ -1,4 +1,5 @@
 .freeform-root {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -6,6 +7,7 @@
   background: #1c1c1e;
   color: #f5f5f7;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .freeform-toolbar {
@@ -26,6 +28,40 @@
   gap: 8px;
   flex-shrink: 0;
   flex-wrap: wrap;
+}
+
+.freeform-workspace-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(212, 235, 255, 0.74);
+}
+
+.freeform-workspace-picker select {
+  min-width: 180px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.75);
+  color: #f5f5f7;
+  padding: 5px 9px;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.freeform-toolbar-mode-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .freeform-btn {
@@ -83,8 +119,8 @@
 .freeform-toolbar--minimal {
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 18px;
-  padding: 10px 16px;
+  gap: 12px 18px;
+  padding: 8px 14px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background:
     radial-gradient(circle at top left, rgba(120, 180, 255, 0.08), transparent 32%),
@@ -103,6 +139,7 @@
   display: flex;
   align-items: baseline;
   gap: 12px;
+  flex: 1 1 320px;
   min-width: 0;
 }
 
@@ -132,12 +169,55 @@
   color: rgba(255, 255, 255, 0.72);
 }
 
+.freeform-mode-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.freeform-mode-chip {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 180px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.freeform-mode-chip strong {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(212, 235, 255, 0.94);
+}
+
+.freeform-mode-chip span {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.freeform-toolbar-panel-wrap {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 14;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
 .freeform-toolbar-panel {
-  flex-basis: 100%;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-height: min(42vh, 380px);
+  width: min(1100px, 100%);
+  max-height: min(56vh, 520px);
   overflow: auto;
   overscroll-behavior: contain;
   padding: 14px 16px 16px;
@@ -145,7 +225,12 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
     radial-gradient(circle at top left, rgba(84, 176, 255, 0.12), transparent 36%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    linear-gradient(180deg, rgba(26, 30, 38, 0.92), rgba(15, 17, 24, 0.9));
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 18px 56px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  pointer-events: auto;
 }
 
 .freeform-toolbar-panel-header {
@@ -242,6 +327,55 @@
 .freeform-field textarea {
   resize: vertical;
   min-height: 112px;
+}
+
+.freeform-paperclip-agent-list {
+  display: flex;
+  max-height: 220px;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.freeform-paperclip-agent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.freeform-paperclip-agent-row.is-selected {
+  border-color: rgba(90, 200, 250, 0.38);
+  background: rgba(90, 200, 250, 0.09);
+}
+
+.freeform-paperclip-agent-row input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.freeform-paperclip-agent-row strong,
+.freeform-paperclip-agent-row span {
+  display: block;
+}
+
+.freeform-paperclip-agent-row strong {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: rgba(245, 245, 247, 0.94);
+}
+
+.freeform-paperclip-agent-row span {
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .freeform-field input::placeholder,
@@ -372,6 +506,39 @@
   color: rgba(215, 236, 255, 0.98);
 }
 
+.freeform-session-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(233, 240, 247, 0.82);
+}
+
+.freeform-session-pill.is-ready {
+  border-color: rgba(52, 199, 89, 0.35);
+  background: rgba(52, 199, 89, 0.14);
+  color: rgba(206, 255, 220, 0.96);
+}
+
+.freeform-session-pill.is-attention {
+  border-color: rgba(255, 159, 10, 0.38);
+  background: rgba(255, 159, 10, 0.14);
+  color: rgba(255, 224, 178, 0.96);
+}
+
+.freeform-session-pill.is-missing {
+  border-color: rgba(255, 69, 58, 0.34);
+  background: rgba(255, 69, 58, 0.14);
+  color: rgba(255, 210, 204, 0.96);
+}
+
 @media (max-width: 920px) {
   .freeform-toolbar--minimal {
     flex-direction: column;
@@ -392,8 +559,15 @@
     grid-template-columns: 1fr;
   }
 
+  .freeform-toolbar-panel-wrap {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+  }
+
   .freeform-toolbar-panel {
-    max-height: min(48vh, 420px);
+    width: 100%;
+    max-height: min(62vh, 520px);
   }
 
   .freeform-problem-inspector {
@@ -729,6 +903,130 @@
   color: rgba(235, 241, 247, 0.86);
 }
 
+.freeform-packet-list {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: 6px;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: rgba(220, 234, 247, 0.82);
+}
+
+.freeform-packet-list li::marker {
+  color: rgba(120, 200, 255, 0.9);
+}
+
+.freeform-memory-palace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.freeform-memory-palace-card {
+  display: flex;
+  min-height: 118px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(120, 200, 255, 0.12), transparent 42%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.freeform-memory-palace-card.is-north_star {
+  border-color: rgba(255, 214, 10, 0.26);
+  background:
+    radial-gradient(circle at top right, rgba(255, 214, 10, 0.16), transparent 42%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.freeform-memory-palace-card.is-room {
+  border-color: rgba(90, 200, 250, 0.24);
+}
+
+.freeform-memory-palace-card.is-portal {
+  border-color: rgba(191, 90, 242, 0.28);
+}
+
+.freeform-memory-palace-card.is-artifact {
+  border-color: rgba(48, 209, 136, 0.28);
+}
+
+.freeform-memory-palace-card.is-checkpoint {
+  border-color: rgba(255, 159, 10, 0.3);
+}
+
+.freeform-memory-palace-card strong {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(245, 245, 247, 0.96);
+}
+
+.freeform-memory-palace-card p {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: rgba(232, 240, 246, 0.78);
+}
+
+.freeform-readiness-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.freeform-readiness-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.freeform-readiness-item.is-ready {
+  border-color: rgba(52, 199, 89, 0.18);
+  background: rgba(52, 199, 89, 0.06);
+}
+
+.freeform-readiness-item.is-attention {
+  border-color: rgba(255, 159, 10, 0.22);
+  background: rgba(255, 159, 10, 0.06);
+}
+
+.freeform-readiness-item.is-missing {
+  border-color: rgba(255, 69, 58, 0.24);
+  background: rgba(255, 69, 58, 0.07);
+}
+
+.freeform-readiness-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.freeform-readiness-item strong {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(222, 236, 247, 0.92);
+}
+
+.freeform-readiness-item span {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: rgba(235, 241, 247, 0.74);
+}
+
 .freeform-marquee-layer {
   position: absolute;
   inset: 0;
@@ -751,6 +1049,57 @@
 
 .freeform-viewport.is-space-down {
   cursor: grab;
+}
+
+.freeform-root--phone .freeform-toolbar--minimal {
+  gap: 10px 14px;
+}
+
+.freeform-root--phone .freeform-toolbar-meta,
+.freeform-root--phone .freeform-toolbar-actions,
+.freeform-root--phone .freeform-toolbar-status {
+  width: 100%;
+}
+
+.freeform-root--phone .freeform-toolbar-status {
+  justify-content: flex-start;
+}
+
+.freeform-root--phone .freeform-toolbar-panel-wrap {
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  justify-content: stretch;
+}
+
+.freeform-root--phone .freeform-toolbar-panel {
+  width: 100%;
+  max-height: min(50vh, 560px);
+}
+
+.freeform-root--phone .freeform-toolbar-panel-grid,
+.freeform-root--phone .freeform-problem-inspector-grid {
+  grid-template-columns: 1fr;
+}
+
+.freeform-root--phone .freeform-memory-palace-grid {
+  grid-template-columns: 1fr;
+}
+
+.freeform-root--phone .freeform-problem-inspector {
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: auto;
+  max-height: min(62vh, 680px);
+}
+
+.freeform-root--palace .freeform-problem-inspector {
+  width: min(520px, calc(100% - 36px));
+  background:
+    radial-gradient(circle at top left, rgba(100, 220, 170, 0.12), transparent 34%),
+    radial-gradient(circle at top right, rgba(120, 200, 255, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(16, 20, 26, 0.95), rgba(11, 14, 19, 0.94));
 }
 
 /* Fills the viewport so empty-canvas clicks hit the world (not the viewport behind cards). */
@@ -1290,6 +1639,13 @@
   font-size: 0.74rem;
   line-height: 1.45;
   color: rgba(235, 241, 247, 0.82);
+}
+
+.freeform-problem-session-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
 }
 
 .freeform-agent-run-summary {

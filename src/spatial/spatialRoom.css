@@ -1,0 +1,383 @@
+.spatial-room-stage {
+  display: grid;
+  gap: 14px;
+}
+
+.spatial-room-stage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spatial-room-kicker {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: #7daed7;
+}
+
+.spatial-room-stage-head h3 {
+  margin: 0;
+  font-size: clamp(1.05rem, 2vw, 1.45rem);
+}
+
+.spatial-room-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spatial-room-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 227, 255, 0.14);
+  background: rgba(7, 17, 30, 0.82);
+  color: #d8ebfb;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.spatial-room-shell {
+  position: relative;
+  min-height: 430px;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(196, 227, 255, 0.14);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 233, 177, 0.14), transparent 22%),
+    radial-gradient(circle at 82% 12%, rgba(85, 161, 255, 0.22), transparent 26%),
+    linear-gradient(180deg, #111c2b 0%, #17273a 34%, #20344b 58%, #2f261d 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.spatial-room-light {
+  position: absolute;
+  left: 50%;
+  top: 10%;
+  width: 44%;
+  height: 42%;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 228, 167, 0.3), transparent 70%);
+  pointer-events: none;
+}
+
+.spatial-room-wall {
+  position: absolute;
+  top: 0;
+  height: 67%;
+  pointer-events: none;
+}
+
+.spatial-room-wall-left {
+  left: 0;
+  width: 31%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    linear-gradient(130deg, rgba(24, 38, 55, 0.88), rgba(18, 28, 42, 0.96));
+  clip-path: polygon(0 0, 100% 0, 72% 100%, 0 100%);
+}
+
+.spatial-room-wall-center {
+  left: 19%;
+  width: 62%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+    linear-gradient(180deg, rgba(31, 48, 68, 0.94), rgba(20, 32, 46, 0.98));
+}
+
+.spatial-room-wall-right {
+  right: 0;
+  width: 31%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
+    linear-gradient(230deg, rgba(24, 38, 55, 0.88), rgba(18, 28, 42, 0.96));
+  clip-path: polygon(28% 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.spatial-room-floor {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 0;
+  height: 46%;
+  background:
+    linear-gradient(180deg, rgba(118, 84, 58, 0.12), rgba(76, 52, 35, 0.66)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0) 4px);
+  clip-path: polygon(13% 0, 87% 0, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+
+.spatial-room-rug {
+  position: absolute;
+  left: 24%;
+  right: 24%;
+  bottom: 11%;
+  height: 18%;
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(31, 67, 115, 0.84), rgba(18, 37, 74, 0.9));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.spatial-room-node {
+  position: absolute;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(196, 227, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+    rgba(7, 17, 30, 0.82);
+  color: #eef6fd;
+  text-align: left;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+}
+
+.spatial-room-node strong,
+.spatial-room-runtime-card strong {
+  font-size: 0.84rem;
+}
+
+.spatial-room-node span,
+.spatial-room-node small,
+.spatial-room-runtime-card span,
+.spatial-room-runtime-card p {
+  color: #acc6dc;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.spatial-room-node small,
+.spatial-room-runtime-card p {
+  margin: 0;
+}
+
+.spatial-room-node[type='button'] {
+  font: inherit;
+  cursor: pointer;
+}
+
+.spatial-room-node[type='button']:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
+    rgba(10, 24, 40, 0.92);
+}
+
+.spatial-room-node.is-ready,
+.spatial-room-runtime-card.is-ready,
+.spatial-room-walk-item.is-ready {
+  border-color: rgba(96, 196, 166, 0.26);
+}
+
+.spatial-room-node.is-attention,
+.spatial-room-runtime-card.is-attention,
+.spatial-room-walk-item.is-attention {
+  border-color: rgba(249, 190, 92, 0.28);
+}
+
+.spatial-room-node.is-calm,
+.spatial-room-runtime-card.is-calm,
+.spatial-room-walk-item.is-calm {
+  border-color: rgba(124, 194, 255, 0.22);
+}
+
+.spatial-room-node-north_star {
+  left: 50%;
+  top: 7%;
+  width: min(240px, 62%);
+  transform: translateX(-50%);
+}
+
+.spatial-room-node-door {
+  left: 8%;
+  top: 26%;
+  width: min(190px, 28%);
+}
+
+.spatial-room-node-wall {
+  left: 6%;
+  top: 48%;
+  width: min(210px, 30%);
+}
+
+.spatial-room-node-shelf {
+  right: 6%;
+  top: 47%;
+  width: min(210px, 30%);
+}
+
+.spatial-room-node-window {
+  right: 9%;
+  top: 22%;
+  width: min(200px, 30%);
+}
+
+.spatial-room-node-table {
+  left: 50%;
+  bottom: 22%;
+  width: min(260px, 44%);
+  transform: translateX(-50%);
+}
+
+.spatial-room-node-console {
+  right: 18%;
+  bottom: 22%;
+  width: min(180px, 30%);
+}
+
+.spatial-room-node-drawer {
+  left: 18%;
+  bottom: 20%;
+  width: min(170px, 28%);
+}
+
+.spatial-room-node-checkpoint {
+  right: 5%;
+  bottom: 7%;
+  width: min(220px, 34%);
+  background:
+    linear-gradient(180deg, rgba(255, 230, 186, 0.08), transparent),
+    rgba(26, 24, 36, 0.88);
+}
+
+.spatial-room-node-portal {
+  left: 3%;
+  bottom: 8%;
+  width: min(170px, 28%);
+  background:
+    radial-gradient(circle at top center, rgba(99, 220, 255, 0.2), transparent 56%),
+    rgba(12, 23, 38, 0.88);
+}
+
+.spatial-room-node-floor {
+  left: 50%;
+  bottom: 7%;
+  width: min(200px, 34%);
+  transform: translateX(-50%);
+}
+
+.spatial-room-walk {
+  position: absolute;
+  left: 24%;
+  right: 24%;
+  bottom: 14%;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.spatial-room-walk-item {
+  min-width: 80px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 227, 255, 0.14);
+  background: rgba(10, 20, 34, 0.86);
+  color: #edf6ff;
+  text-align: center;
+  font-size: 0.74rem;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+.spatial-room-walk-item[type='button'] {
+  font: inherit;
+  cursor: pointer;
+}
+
+.spatial-room-summary,
+.spatial-room-memory {
+  margin: 0;
+  color: #c2d4e2;
+  line-height: 1.55;
+}
+
+.spatial-room-memory {
+  color: #94acc0;
+  font-size: 0.8rem;
+}
+
+.spatial-room-runtime {
+  display: grid;
+  gap: 10px;
+}
+
+.spatial-room-runtime-head {
+  display: grid;
+  gap: 4px;
+}
+
+.spatial-room-runtime-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.spatial-room-runtime-card {
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(196, 227, 255, 0.12);
+  background: rgba(8, 17, 29, 0.84);
+}
+
+.spatial-room-stage.is-compact .spatial-room-shell {
+  min-height: 330px;
+}
+
+.spatial-room-stage.is-compact .spatial-room-node {
+  padding: 8px 10px;
+}
+
+.spatial-room-stage.is-compact .spatial-room-node span,
+.spatial-room-stage.is-compact .spatial-room-node small {
+  font-size: 0.68rem;
+}
+
+@media (min-width: 900px) {
+  .spatial-room-runtime-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .spatial-room-shell {
+    min-height: 320px;
+  }
+
+  .spatial-room-node-door,
+  .spatial-room-node-wall,
+  .spatial-room-node-shelf,
+  .spatial-room-node-window,
+  .spatial-room-node-console,
+  .spatial-room-node-drawer,
+  .spatial-room-node-checkpoint,
+  .spatial-room-node-portal,
+  .spatial-room-node-floor {
+    width: min(46%, 180px);
+  }
+
+  .spatial-room-node-wall,
+  .spatial-room-node-shelf {
+    top: 52%;
+  }
+
+  .spatial-room-walk {
+    left: 16%;
+    right: 16%;
+    bottom: 18%;
+    gap: 6px;
+  }
+
+  .spatial-room-walk-item {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+}

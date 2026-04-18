@@ -4,6 +4,8 @@ Interactive **freeform board** for orchestrating problem hubs and agent cards: p
 
 The shipped app surface is the freeform board in [src/freeform](./src/freeform). Older or dormant explorations live under [experiments](./experiments) so they do not read like active product code.
 
+The app now also includes a first `World OS` shell in [src/world](./src/world): an Earth -> Wing -> Actor -> Room entry surface that frames DewDrops as a spatial operating system instead of a board-only tool. The higher-level product direction is captured in [docs/world-os.md](./docs/world-os.md).
+
 ## Run
 
 ```bash
@@ -50,6 +52,12 @@ If Butler-os is running its local bridge on `http://127.0.0.1:8765`, the toolbar
 - inspect recent runs for the selected room
 
 For local browser development, the Butler bridge accepts `localhost` requests without a manual token unless local token enforcement has been explicitly enabled. DewDrops persists any bridge URL/token you enter in browser storage.
+
+## Surface Routes
+
+- `/` opens the World OS shell
+- `/?surface=desktop` opens the board directly
+- `/?surface=phone` opens the phone relay
 
 ## What this is
 
