@@ -29,7 +29,7 @@ export type RoomAssetZoneId =
   | 'control_surface'
   | 'archive_shelf'
   | 'closet'
-  | 'drawer'
+  | 'compartment'
   | 'phone_checkpoint'
 
 export type RoomAssetCapturePipeline = 'roomplan' | 'arkit' | 'avfoundation' | 'openusd' | 'manual' | 'import'
@@ -258,8 +258,8 @@ export const CANONICAL_ROOM_ASSET_LOCI: ReadonlyArray<{
     size: { width: 0.9, depth: 0.45, height: 1.8 },
   },
   {
-    id: 'drawer',
-    label: 'Drawer',
+    id: 'compartment',
+    label: 'Compartment',
     summary: 'Atomic leaves and folded records live here.',
     position: { x: -0.3, y: 0.9, z: 0 },
     size: { width: 0.65, depth: 0.25, height: 0.18 },
@@ -292,7 +292,7 @@ const DEFAULT_LOCUS_TAGS: Record<RoomAssetZoneId, string[]> = {
   control_surface: ['agents', 'control'],
   archive_shelf: ['archive', 'history'],
   closet: ['compression', 'context'],
-  drawer: ['records', 'leaves'],
+  compartment: ['records', 'leaves'],
   phone_checkpoint: ['phone', 'relay'],
 }
 
@@ -464,7 +464,7 @@ function normalizeZoneId(value: unknown, label: string, fallback: RoomAssetZoneI
     return 'archive_shelf'
   }
   if (text.includes('closet') || text.includes('stash') || text.includes('storage')) return 'closet'
-  if (text.includes('drawer') || text.includes('fold')) return 'drawer'
+  if (text.includes('compartment') || text.includes('fold')) return 'compartment'
   if (text.includes('phone') || text.includes('relay') || text.includes('mobile')) return 'phone_checkpoint'
   return fallback
 }

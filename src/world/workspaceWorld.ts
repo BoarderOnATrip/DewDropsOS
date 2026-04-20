@@ -1,4 +1,6 @@
-import type { BoardWire, WorkflowCard } from '../freeform/types'
+import { normalizeAgentRuntime } from '../freeform/agentRuntime'
+import { briefCompartmentAssetArtifactRef } from '../freeform/briefCompartments'
+import type { BoardWire, BriefCompartmentAsset, WorkflowCard } from '../freeform/types'
 import { buildVisualMemoryPalace } from '../freeform/visualMemoryPalace'
 import type {
   Actor,
@@ -43,17 +45,58 @@ function summarizeProblem(problem: WorkflowCard): string {
 }
 
 function roomTone(problem: WorkflowCard): string {
+  const latestRun = problem.runLedger?.[0]
+
+  if (
+    latestRun?.continuationDecision === 'escalate' ||
+    latestRun?.selfEvaluation?.escalationReason != null
+  )
+    return 'attention'
+
   if ((problem.openQuestions?.length ?? 0) > 0) return 'attention'
+
+  if (latestRun?.continuationDecision === 'continue') return 'ready'
+
+  if (
+    latestRun?.continuationDecision === 'complete' &&
+    latestRun.artifacts.some((a) => a.status === 'provisional')
+  )
+    return 'attention'
+
+  if (latestRun?.continuationDecision === 'complete') return 'ready'
+
   if (problem.lastPaperclipRunId || problem.lastSwarmRunId) return 'ready'
+
   return 'calm'
 }
 
 function locusKindForMemoryKind(kind: string): LocusKind {
   if (kind === 'north_star') return 'platform'
   if (kind === 'portal') return 'door'
-  if (kind === 'artifact') return 'drawer'
+  if (kind === 'artifact') return 'compartment'
   if (kind === 'checkpoint') return 'console'
   return 'table'
+}
+
+function artifactKindForBriefCompartmentAsset(asset: BriefCompartmentAsset): Artifact['artifactKind'] {
+  if (asset.mimeType.startsWith('image/')) return 'image'
+  if (asset.mimeType.startsWith('audio/') || asset.mimeType.startsWith('video/')) return 'recording'
+  if (asset.compartmentKind === 'data') return 'model'
+  if (asset.compartmentKind === 'edit' || asset.compartmentKind === 'publish' || asset.compartmentKind === 'shotlist') return 'plan'
+  return 'document'
+}
+
+function locateCompartmentAssetLocus(
+  roomLoci: readonly Locus[],
+  asset: BriefCompartmentAsset,
+): string | undefined {
+  if (asset.matchedLocusId) {
+    const matched = roomLoci.find((locus) => locus.id.endsWith(`-${asset.matchedLocusId}`))
+    if (matched) return matched.id
+  }
+
+  const normalizedLabel = asset.compartmentLabel.trim().toLowerCase()
+  return roomLoci.find((locus) => locus.title.trim().toLowerCase() === normalizedLabel)?.id
 }
 
 export function buildWorkspaceWorldGraph(
@@ -77,18 +120,26 @@ export function buildWorkspaceWorldGraph(
     tags: ['operator', 'anchor', 'synthetic'],
   }
 
-  const agents: Agent[] = agentCards.map((card, index) => ({
-    kind: 'agent',
-    id: card.id,
-    title: card.title,
-    summary: `Workspace agent card for ${card.title}.`,
-    wingId,
-    roomIds: card.assignedToProblemId ? [card.assignedToProblemId] : [],
-    provider: 'custom',
-    active: true,
-    position: { x: 120 + (index % 4) * 70, y: Math.floor(index / 4) * 70, z: 0 },
-    tags: ['workspace-agent'],
-  }))
+  const agents: Agent[] = agentCards.map((card, index) => {
+    const runtime = normalizeAgentRuntime(card.agentRuntime, { cardId: card.id, title: card.title })
+    let provider: Agent['provider'] = 'custom'
+    if (runtime.profile === 'openclaw') provider = 'openclaw'
+    else if (runtime.profile === 'paperclip') provider = 'paperclip'
+    else if (runtime.profile === 'codex') provider = 'codex'
+    else if (runtime.profile === 'claude-code') provider = 'claude-code'
+    return {
+      kind: 'agent',
+      id: card.id,
+      title: card.title,
+      summary: `Workspace agent card for ${card.title}.`,
+      wingId,
+      roomIds: card.assignedToProblemId ? [card.assignedToProblemId] : [],
+      provider,
+      active: true,
+      position: { x: 120 + (index % 4) * 70, y: Math.floor(index / 4) * 70, z: 0 },
+      tags: ['workspace-agent'],
+    }
+  })
 
   const artifacts: Artifact[] = []
   const loci: Locus[] = []
@@ -153,6 +204,46 @@ export function buildWorkspaceWorldGraph(
         actorIds: roomActorIds,
         position: { x: 70, y: problemIndex * 60 + 20, z: 0 },
         tags: ['handoff', 'projection'],
+      })
+    }
+    if (problem.runLedger && problem.runLedger.length > 0) {
+      problem.runLedger.forEach((entry, entryIndex) => {
+        const isLatest = entryIndex === 0
+        roomArtifacts.push({
+          kind: 'artifact',
+          id: `${problem.id}-run-${entry.runId}`,
+          title: entry.title,
+          summary: entry.artifacts[0]?.summary ?? `Run ${entry.status}: ${entry.title}.`,
+          roomId: problem.id,
+          locusId: roomLoci[2]?.id ?? roomLoci[0]?.id,
+          artifactKind: entry.artifacts[0]?.kind === 'report' ? 'document' : 'recording',
+          actorIds: roomActorIds,
+          position: { x: 140 + entryIndex * 40, y: problemIndex * 60 + 40, z: 0 },
+          tags: ['run', entry.status, ...(isLatest ? ['latest-run'] : [])],
+        })
+      })
+    }
+    if (problem.briefCompartmentAssets && problem.briefCompartmentAssets.length > 0) {
+      problem.briefCompartmentAssets.forEach((asset, assetIndex) => {
+        roomArtifacts.push({
+          kind: 'artifact',
+          id: `${problem.id}-compartment-${asset.id}`,
+          title: asset.name,
+          summary:
+            asset.organizeReason?.trim() ||
+            `${asset.compartmentLabel} • ${asset.mimeType || asset.extension || 'room material'}`,
+          roomId: problem.id,
+          locusId: locateCompartmentAssetLocus(roomLoci, asset) ?? roomLoci[1]?.id ?? roomLoci[0]?.id,
+          artifactKind: artifactKindForBriefCompartmentAsset(asset),
+          actorIds: roomActorIds,
+          position: { x: -70 + assetIndex * 34, y: problemIndex * 60 + 64, z: 0 },
+          tags: [
+            'compartment-asset',
+            asset.compartmentKind,
+            asset.organizeStatus,
+            briefCompartmentAssetArtifactRef(asset),
+          ],
+        })
       })
     }
 

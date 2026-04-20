@@ -12,16 +12,19 @@ import {
   type Actor,
   type Locus,
   type ProjectionMode,
+  type Room,
   type WorldGraph,
   type WorldNodeKind,
   type WorldRef,
 } from './model'
 import { buildProblemSessionBlueprint } from '../freeform/sessionBlueprint'
-import type { WorkflowCard } from '../freeform/types'
+import { normalizeBriefSpec } from '../freeform/briefSpec'
+import type { RunLedgerEntry, WorkflowCard } from '../freeform/types'
+import { parseHandoffNotes } from '../freeform/rtk'
 import { memoryPalaceKindLabel } from '../freeform/visualMemoryPalace'
 import type {
   WorldClosetCard,
-  WorldClosetDrawer,
+  WorldClosetCompartment,
   WorldDrillStage,
   WorldDrillStageId,
   WorldHierarchy,
@@ -62,6 +65,249 @@ export type WorldShellData = {
   locusPreview?: WorldLocusPreview
   closetCards: WorldClosetCard[]
   selectedClosetId: string | null
+}
+
+type RunMonitorSnapshot = {
+  activeItems: WorldProjectionStageItem[]
+  escalationItems: WorldProjectionStageItem[]
+  acceptanceItems: WorldProjectionStageItem[]
+  coverageItems: WorldProjectionStageItem[]
+  activeCount: number
+  escalationCount: number
+  acceptanceCount: number
+  coverageCount: number
+}
+
+function buildRunMonitorDetailSections(runMonitor: RunMonitorSnapshot): Array<{
+  id: string
+  title: string
+  style: 'list'
+  tone: 'ready' | 'attention' | 'calm' | 'missing'
+  copy: string
+  items: WorldProjectionStageItem[]
+}> {
+  const sections = []
+
+  if (runMonitor.activeCount > 0) {
+    sections.push({
+      id: 'run-monitor-active',
+      title: 'Active runs',
+      style: 'list' as const,
+      tone: 'ready' as const,
+      copy: `${runMonitor.activeCount} run${runMonitor.activeCount === 1 ? '' : 's'} are still moving across the workspace.`,
+      items: limitStageItems(runMonitor.activeItems, 6),
+    })
+  }
+
+  if (runMonitor.escalationCount > 0) {
+    sections.push({
+      id: 'run-monitor-escalations',
+      title: 'Escalations',
+      style: 'list' as const,
+      tone: 'attention' as const,
+      copy: `${runMonitor.escalationCount} run${runMonitor.escalationCount === 1 ? '' : 's'} have asked for outcome-level human attention.`,
+      items: limitStageItems(runMonitor.escalationItems, 6),
+    })
+  }
+
+  if (runMonitor.acceptanceCount > 0) {
+    sections.push({
+      id: 'run-monitor-acceptance',
+      title: 'Acceptance queue',
+      style: 'list' as const,
+      tone: 'attention' as const,
+      copy: `${runMonitor.acceptanceCount} run${runMonitor.acceptanceCount === 1 ? '' : 's'} are waiting on artifact acceptance.`,
+      items: limitStageItems(runMonitor.acceptanceItems, 6),
+    })
+  }
+
+  if (runMonitor.coverageCount > 0) {
+    sections.push({
+      id: 'run-monitor-coverage',
+      title: 'Criteria coverage',
+      style: 'list' as const,
+      tone: 'calm' as const,
+      copy: `${runMonitor.coverageCount} latest run${runMonitor.coverageCount === 1 ? '' : 's'} have criteria coverage signals from the brief.`,
+      items: limitStageItems(runMonitor.coverageItems, 6),
+    })
+  }
+
+  return sections
+}
+
+function buildBriefStatusSections(
+  selectedProblem: WorkflowCard | null,
+  latestRunEntry: RunLedgerEntry | undefined,
+  selectedRoom: Room | null,
+): Array<{
+  id: string
+  title: string
+  style: 'list'
+  tone: 'ready' | 'attention' | 'calm' | 'missing'
+  copy: string
+  items: WorldProjectionStageItem[]
+}> {
+  if (!selectedProblem) return []
+
+  const roomRef = selectedRoom ? worldRef('room', selectedRoom.id) : undefined
+
+  // No brief defined — emit a single missing section
+  if (!selectedProblem.briefSpec) {
+    return [
+      {
+        id: 'brief-missing',
+        title: 'Brief status',
+        style: 'list' as const,
+        tone: 'missing' as const,
+        copy: 'No brief defined. Add a BriefSpec to unlock acceptance criteria, self-evaluation, and continuation tracking.',
+        items: [],
+      },
+    ]
+  }
+  const briefSpec = normalizeBriefSpec(selectedProblem.briefSpec, `brief-${selectedProblem.id}`)
+
+  const sections: Array<{
+    id: string
+    title: string
+    style: 'list'
+    tone: 'ready' | 'attention' | 'calm' | 'missing'
+    copy: string
+    items: WorldProjectionStageItem[]
+  }> = []
+
+  const criteria = briefSpec.execution.acceptanceCriteria ?? []
+  const criteriaChecks = latestRunEntry?.selfEvaluation?.criteriaChecks ?? []
+  const checkById = new Map(criteriaChecks.map((c) => [c.criterionId, c]))
+
+  // Brief criteria section
+  const criteriaItems = criteria.map((criterion) => {
+    const check = checkById.get(criterion.id)
+    const prefix = check ? (check.met ? '✓ ' : '· ') : ''
+    return buildStageItem(`brief-criterion-${criterion.id}`, `${prefix}${criterion.description}`, roomRef)
+  })
+
+  let criteriaTone: 'ready' | 'attention' | 'calm'
+  if (!latestRunEntry) {
+    criteriaTone = 'calm'
+  } else {
+    const allMet = criteria.length > 0 && criteria.every((c) => checkById.get(c.id)?.met === true)
+    criteriaTone = allMet ? 'ready' : 'attention'
+  }
+
+  sections.push({
+    id: 'brief-criteria',
+    title: 'Brief criteria',
+    style: 'list' as const,
+    tone: criteriaTone,
+    copy: `${criteria.length} acceptance criterion${criteria.length === 1 ? '' : 'a'} defined in this brief.`,
+    items: limitStageItems(criteriaItems, 6),
+  })
+
+  // Continuation state section
+  if (latestRunEntry?.continuationDecision) {
+    const decision = latestRunEntry.continuationDecision
+    let continuationTone: 'ready' | 'attention' | 'calm'
+    let continuationCopy: string
+
+    if (decision === 'escalate') {
+      continuationTone = 'attention'
+      continuationCopy = latestRunEntry.selfEvaluation?.escalationReason ?? 'Escalated — outcome-level contradiction detected.'
+    } else if (decision === 'continue') {
+      continuationTone = 'ready'
+      const nextAction = latestRunEntry.selfEvaluation?.nextAction
+      const remaining = latestRunEntry.selfEvaluation?.criteriaRemaining?.length ?? 0
+      continuationCopy = nextAction ?? `${remaining} criterion${remaining === 1 ? '' : 'a'} remaining.`
+    } else {
+      // complete
+      continuationTone = 'calm'
+      continuationCopy = 'All criteria satisfied. Awaiting acceptance.'
+    }
+
+    sections.push({
+      id: 'brief-continuation',
+      title: 'Continuation state',
+      style: 'list' as const,
+      tone: continuationTone,
+      copy: continuationCopy,
+      items: [],
+    })
+  }
+
+  // Handoff reasoning section
+  const handoffNotes = latestRunEntry?.selfEvaluation?.handoffNotes
+  if (handoffNotes) {
+    const parsed = parseHandoffNotes(handoffNotes)
+    if (parsed) {
+      sections.push({
+        id: 'brief-handoff',
+        title: 'Handoff reasoning',
+        style: 'list' as const,
+        tone: 'calm' as const,
+        copy: '',
+        items: limitStageItems([
+          buildStageItem('brief-handoff-dec', `dec: ${parsed.dec}`, roomRef),
+          buildStageItem('brief-handoff-why', `why: ${parsed.why}`, roomRef),
+        ], 6),
+      })
+    }
+  }
+
+  return sections
+}
+
+function buildDependencySatisfactionSections(
+  selectedProblem: WorkflowCard | null,
+  problemsById: Map<string, WorkflowCard>,
+): Array<{
+  id: string
+  title: string
+  style: 'list'
+  tone: 'ready' | 'attention' | 'calm' | 'missing'
+  copy: string
+  items: WorldProjectionStageItem[]
+}> {
+  if (!selectedProblem) return []
+  const dependsOn = selectedProblem.briefSpec?.execution.dependsOn
+  if (!dependsOn || dependsOn.length === 0) return []
+
+  const depItems: WorldProjectionStageItem[] = []
+  let unsatisfied = 0
+
+  for (const depId of dependsOn) {
+    const depCard = problemsById.get(depId)
+    if (!depCard) {
+      depItems.push(buildStageItem(`dep-${depId}`, `${depId} → · not found`))
+      unsatisfied++
+      continue
+    }
+    const latestRunEntry = depCard.runLedger?.[0]
+    const satisfied =
+      latestRunEntry?.continuationDecision === 'complete' ||
+      latestRunEntry?.selfEvaluation?.allCriteriaMet === true
+    const statusLabel = satisfied ? '✓ complete' : '· in progress'
+    depItems.push(
+      buildStageItem(`dep-${depId}`, `${depCard.title} → ${statusLabel}`, worldRef('room', depId)),
+    )
+    if (!satisfied) unsatisfied++
+  }
+
+  const total = dependsOn.length
+  const allSatisfied = unsatisfied === 0
+  const tone = allSatisfied ? ('ready' as const) : ('attention' as const)
+  const copy = allSatisfied
+    ? `All ${total} dependencies satisfied.`
+    : `${unsatisfied} of ${total} dependencies still in progress.`
+
+  return [
+    {
+      id: 'brief-dependencies',
+      title: 'Dependencies',
+      style: 'list' as const,
+      tone,
+      copy,
+      items: limitStageItems(depItems, 6),
+    },
+  ]
 }
 
 const PROJECTION_CHIPS: Record<ProjectionMode, WorldProjectionChip> = {
@@ -117,6 +363,7 @@ function compactLabel(value: string): string {
     'dewdrops/cards/',
     'lifegirdle/wings/',
     'drawer/',
+    'compartment/',
   ]
   let compact = value.trim()
   for (const prefix of prefixes) {
@@ -127,6 +374,159 @@ function compactLabel(value: string): string {
   }
   if (compact.length <= 56) return compact
   return `${compact.slice(0, 24)}...${compact.slice(-20)}`
+}
+
+function normalizeRunStatus(value: string | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function latestRun(problem: WorkflowCard): RunLedgerEntry | undefined {
+  return problem.runLedger?.[0]
+}
+
+function runArtifactStatus(artifact: RunLedgerEntry['artifacts'][number]): 'provisional' | 'accepted' | 'rejected' {
+  return artifact.status ?? 'provisional'
+}
+
+function runIsActive(entry: RunLedgerEntry): boolean {
+  const status = normalizeRunStatus(entry.status)
+  if (entry.completedAt) return false
+  if (
+    status === 'completed' ||
+    status === 'complete' ||
+    status === 'accepted' ||
+    status === 'rejected' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'canceled'
+  ) {
+    return false
+  }
+  if (
+    status.includes('running') ||
+    status.includes('active') ||
+    status.includes('queued') ||
+    status.includes('pending') ||
+    status.includes('progress')
+  ) {
+    return true
+  }
+  return Boolean(entry.selfEvaluation?.nextAction) || entry.artifacts.some((artifact) => runArtifactStatus(artifact) === 'provisional')
+}
+
+function runIsEscalated(entry: RunLedgerEntry): boolean {
+  const status = normalizeRunStatus(entry.status)
+  return Boolean(entry.selfEvaluation?.escalationReason) || entry.continuationDecision === 'escalate' || status.includes('escalat')
+}
+
+function runNeedsAcceptance(entry: RunLedgerEntry): boolean {
+  if (runIsEscalated(entry)) return false
+  const status = normalizeRunStatus(entry.status)
+  const readyForAcceptance =
+    entry.continuationDecision === 'complete' ||
+    entry.selfEvaluation?.allCriteriaMet === true ||
+    status === 'completed' ||
+    status === 'complete' ||
+    status === 'ready_for_acceptance' ||
+    status === 'acceptance_queue'
+  const hasPendingArtifacts = entry.artifacts.some((artifact) => runArtifactStatus(artifact) === 'provisional')
+  return readyForAcceptance && hasPendingArtifacts
+}
+
+function runCoverageForProblem(problem: WorkflowCard, entry?: RunLedgerEntry): {
+  met: number
+  total: number
+  label?: string
+} {
+  if (!entry) {
+    return { met: 0, total: 0 }
+  }
+
+  const criteriaChecks = entry.selfEvaluation?.criteriaChecks ?? []
+  const total =
+    problem.briefSpec?.execution.acceptanceCriteria?.length ??
+    criteriaChecks.length ??
+    0
+  const met = criteriaChecks.filter((check) => check.met).length
+
+  if (total > 0) {
+    return {
+      met,
+      total,
+      label: `${met}/${total} criteria covered`,
+    }
+  }
+
+  if (met > 0) {
+    return {
+      met,
+      total,
+      label: `${met} criteria tracked`,
+    }
+  }
+
+  return { met: 0, total: 0 }
+}
+
+function buildRunMonitorSnapshot(
+  _index: ReturnType<typeof buildWorldIndex>,
+  problemsById: Map<string, WorkflowCard>,
+): RunMonitorSnapshot {
+  const activeItems: WorldProjectionStageItem[] = []
+  const escalationItems: WorldProjectionStageItem[] = []
+  const acceptanceItems: WorldProjectionStageItem[] = []
+  const coverageItems: WorldProjectionStageItem[] = []
+
+  for (const problem of problemsById.values()) {
+    const roomRef = worldRef('room', problem.id)
+    const entries = problem.runLedger ?? []
+
+    entries.forEach((entry, entryIndex) => {
+      const runId = `${problem.id}-${entry.runId}-${entryIndex}`
+      const runLabel = `${problem.title} → ${entry.title} (${entry.status})`
+
+      if (runIsActive(entry)) {
+        activeItems.push(buildStageItem(`run-monitor-active-${runId}`, runLabel, roomRef))
+      }
+
+      if (runIsEscalated(entry)) {
+        escalationItems.push(buildStageItem(`run-monitor-escalation-${runId}`, runLabel, roomRef))
+      }
+
+      if (runNeedsAcceptance(entry)) {
+        const pendingArtifacts = entry.artifacts.filter((artifact) => runArtifactStatus(artifact) === 'provisional')
+        acceptanceItems.push(
+          buildStageItem(
+            `run-monitor-acceptance-${runId}`,
+            `${problem.title} → ${pendingArtifacts.length} provisional artifact${pendingArtifacts.length === 1 ? '' : 's'}`,
+            roomRef,
+          ),
+        )
+      }
+
+      const coverage = runCoverageForProblem(problem, entry)
+      if (coverage.label) {
+        coverageItems.push(
+          buildStageItem(
+            `run-monitor-coverage-${runId}`,
+            `${problem.title} → ${coverage.label}`,
+            roomRef,
+          ),
+        )
+      }
+    })
+  }
+
+  return {
+    activeItems: activeItems.slice(0, 6),
+    escalationItems: escalationItems.slice(0, 6),
+    acceptanceItems: acceptanceItems.slice(0, 6),
+    coverageItems: coverageItems.slice(0, 6),
+    activeCount: activeItems.length,
+    escalationCount: escalationItems.length,
+    acceptanceCount: acceptanceItems.length,
+    coverageCount: coverageItems.length,
+  }
 }
 
 function buildStageItem(
@@ -437,7 +837,7 @@ function locusKindLabel(kind: Locus['locusKind']): string {
   if (kind === 'door') return 'Door'
   if (kind === 'table') return 'Table'
   if (kind === 'wall') return 'Wall'
-  if (kind === 'drawer') return 'Drawer'
+  if (kind === 'compartment') return 'Compartment'
   if (kind === 'window') return 'Window'
   if (kind === 'floor') return 'Floor'
   if (kind === 'console') return 'Console'
@@ -644,7 +1044,10 @@ function buildRoomPreview(
   const roomLoci = listLociForRoom(index, room.id)
   const roomArtifacts = listArtifactsForRoom(index, room.id)
   const roomTunnels = listTunnelsForNode(index, room.id)
-  const latestRunLabel = problem?.lastPaperclipRunId
+  const latestLedgerRun = problem ? latestRun(problem) : undefined
+  const latestRunLabel = latestLedgerRun
+    ? `${latestLedgerRun.title} • ${latestLedgerRun.status}`
+    : problem?.lastPaperclipRunId
     ? `Paperclip ${problem.lastPaperclipRunId}`
     : problem?.lastSwarmRunId
       ? `Swarm ${problem.lastSwarmRunId}`
@@ -752,11 +1155,11 @@ function buildLocusPreview(
   }
 }
 
-function buildDrawer(
+function buildCompartment(
   id: string,
   label: string,
   focusRef?: WorldRef,
-): WorldClosetDrawer {
+): WorldClosetCompartment {
   return {
     id,
     label,
@@ -764,26 +1167,26 @@ function buildDrawer(
   }
 }
 
-function flattenProjectionDrawers(
+function flattenProjectionCompartments(
   activeProjection: WorldProjectionStage,
-): WorldClosetDrawer[] {
-  const actionDrawers = activeProjection.cards.map((card) =>
-    buildDrawer(
+): WorldClosetCompartment[] {
+  const actionCompartments = activeProjection.cards.map((card) =>
+    buildCompartment(
       `projection-card-${card.id}`,
       `${card.kind} -> ${card.title}`,
       card.focusRef,
     ),
   )
-  const detailDrawers = (activeProjection.detailSections ?? []).flatMap((section) =>
+  const detailCompartments = (activeProjection.detailSections ?? []).flatMap((section) =>
     (section.items ?? []).map((item, index) =>
-      buildDrawer(
+      buildCompartment(
         `${section.id}-${index}`,
         `${section.title} -> ${item.label}`,
         item.focusRef,
       ),
     ),
   )
-  return [...actionDrawers, ...detailDrawers].slice(0, 8)
+  return [...actionCompartments, ...detailCompartments].slice(0, 8)
 }
 
 function buildClosetCards(
@@ -793,6 +1196,7 @@ function buildClosetCards(
   roomPreview: WorldRoomPreview | undefined,
   locusPreview: WorldLocusPreview | undefined,
   activeProjection: WorldProjectionStage,
+  runMonitor: RunMonitorSnapshot,
 ): WorldClosetCard[] {
   const room = roomId ? index.roomById.get(roomId) ?? null : null
   const roomLoci = room ? listLociForRoom(index, room.id) : []
@@ -800,43 +1204,33 @@ function buildClosetCards(
   const roomTunnels = room ? listTunnelsForNode(index, room.id) : []
   const locus = locusId ? index.locusById.get(locusId) ?? null : null
 
-  if (!roomPreview) {
-    return activeProjection.detailSections?.length
-      ? [
-          {
-            id: `projection-${activeProjection.id}`,
-            title: `${activeProjection.modeLabel} closet`,
-            summary: activeProjection.summary,
-            sourceLabel: `${activeProjection.modeLabel} view`,
-            drawers: flattenProjectionDrawers(activeProjection),
-            tone: 'ready',
-            accent: '#7dd3fc',
-          },
-        ]
-      : []
-  }
-
-  const cards: WorldClosetCard[] = [
+  const cards: WorldClosetCard[] = activeProjection.detailSections?.length
+    ? [
     {
       id: `projection-${activeProjection.id}`,
       title: `${activeProjection.modeLabel} closet`,
       summary: activeProjection.summary,
       sourceLabel: `${activeProjection.modeLabel} view`,
-      drawers: flattenProjectionDrawers(activeProjection),
+      compartments: flattenProjectionCompartments(activeProjection),
       tone: activeProjection.id === 'packet' ? 'ready' : activeProjection.id === 'fold' ? 'attention' : 'calm',
       accent: '#7dd3fc',
     },
+    ]
+    : []
+
+  if (roomPreview) {
+    cards.push(
     {
       id: 'closet-briefs',
-      title: 'Brief closet',
-      summary: 'Primary room briefs, launch surface, and memory bindings kept together.',
+      title: 'Briefcase',
+      summary: 'Primary brief, return surfaces, and memory bindings kept together.',
       sourceLabel: 'Room memory',
-      drawers: [
-        buildDrawer('brief-surface', `surface -> ${roomPreview.surfaceLabel}`, room ? worldRef('room', room.id) : undefined),
-        buildDrawer('brief-memory', `memory -> ${roomPreview.memoryLabel}`, room ? worldRef('room', room.id) : undefined),
-        buildDrawer('brief-summary', roomPreview.summary, room ? worldRef('room', room.id) : undefined),
-        ...(roomPreview.desktopBrief ? [buildDrawer('brief-desktop', `desktop -> ${roomPreview.desktopBrief}`, room ? worldRef('room', room.id) : undefined)] : []),
-        ...(roomPreview.phoneBrief ? [buildDrawer('brief-phone', `phone -> ${roomPreview.phoneBrief}`, room ? worldRef('room', room.id) : undefined)] : []),
+      compartments: [
+        buildCompartment('brief-surface', `surface -> ${roomPreview.surfaceLabel}`, room ? worldRef('room', room.id) : undefined),
+        buildCompartment('brief-memory', `memory -> ${roomPreview.memoryLabel}`, room ? worldRef('room', room.id) : undefined),
+        buildCompartment('brief-summary', roomPreview.summary, room ? worldRef('room', room.id) : undefined),
+        ...(roomPreview.desktopBrief ? [buildCompartment('brief-desktop', `desktop -> ${roomPreview.desktopBrief}`, room ? worldRef('room', room.id) : undefined)] : []),
+        ...(roomPreview.phoneBrief ? [buildCompartment('brief-phone', `phone -> ${roomPreview.phoneBrief}`, room ? worldRef('room', room.id) : undefined)] : []),
       ],
       tone: 'calm',
       accent: '#84cc16',
@@ -846,10 +1240,10 @@ function buildClosetCards(
       title: 'Anchor closet',
       summary: 'Stable refs and loci that let the room collapse and unfold without losing shape.',
       sourceLabel: 'Memory bind',
-      drawers: [
-        ...roomPreview.anchorLabels.map((anchor, index) => buildDrawer(`anchor-${index + 1}`, anchor)),
+      compartments: [
+        ...roomPreview.anchorLabels.map((anchor, index) => buildCompartment(`anchor-${index + 1}`, anchor)),
         ...roomLoci.map((entry) =>
-          buildDrawer(`locus-${entry.id}`, `locus -> ${entry.title}`, worldRef('locus', entry.id)),
+          buildCompartment(`locus-${entry.id}`, `locus -> ${entry.title}`, worldRef('locus', entry.id)),
         ),
       ],
       tone: roomPreview.anchorLabels.length > 0 ? 'ready' : 'attention',
@@ -860,8 +1254,8 @@ function buildClosetCards(
       title: 'Artifact closet',
       summary: 'Documents, evidence, and durable work objects currently surfaced by the room.',
       sourceLabel: 'Evidence',
-      drawers: roomArtifacts.map((artifact) =>
-        buildDrawer(`artifact-${artifact.id}`, `artifact -> ${artifact.title}`, worldRef('artifact', artifact.id)),
+      compartments: roomArtifacts.map((artifact) =>
+        buildCompartment(`artifact-${artifact.id}`, `artifact -> ${artifact.title}`, worldRef('artifact', artifact.id)),
       ),
       tone: roomPreview.artifactLabels.length > 0 ? 'ready' : 'missing',
       accent: '#38bdf8',
@@ -871,22 +1265,73 @@ function buildClosetCards(
       title: 'Continuity closet',
       summary: 'Tunnels, runs, and open questions that keep the room moving forward.',
       sourceLabel: 'Continuity',
-      drawers: [
-        ...(roomPreview.latestRunLabel ? [buildDrawer('continuity-run', roomPreview.latestRunLabel, room ? worldRef('room', room.id) : undefined)] : []),
+      compartments: [
+        ...(roomPreview.latestRunLabel ? [buildCompartment('continuity-run', roomPreview.latestRunLabel, room ? worldRef('room', room.id) : undefined)] : []),
         ...roomTunnels.map((tunnel) => {
           const other = tunnel.from.id === room?.id ? tunnel.to : tunnel.from
-          return buildDrawer(
+          return buildCompartment(
             `tunnel-${tunnel.id}`,
             `tunnel -> ${tunnel.label}`,
             other.kind !== 'artifact' ? worldRef(other.kind, other.id) : worldRef('artifact', other.id),
           )
         }),
-        ...roomPreview.openQuestionLabels.map((question, index) => buildDrawer(`question-${index + 1}`, `question -> ${question}`)),
+        ...roomPreview.openQuestionLabels.map((question, index) => buildCompartment(`question-${index + 1}`, `question -> ${question}`)),
       ],
       tone: roomPreview.openQuestionLabels.length > 0 ? 'attention' : 'calm',
       accent: '#fb7185',
     },
-  ]
+    )
+  }
+
+  if (runMonitor.activeCount > 0 || runMonitor.escalationCount > 0 || runMonitor.acceptanceCount > 0 || runMonitor.coverageCount > 0) {
+    cards.push({
+      id: 'closet-run-monitor',
+      title: 'Run monitor',
+      summary: `${runMonitor.activeCount} active, ${runMonitor.escalationCount} escalated, ${runMonitor.acceptanceCount} awaiting acceptance, ${runMonitor.coverageCount} with criteria coverage.`,
+      sourceLabel: 'Workspace runs',
+      compartments: [
+        ...runMonitor.activeItems.map((item, index) =>
+          buildCompartment(`run-monitor-active-${index + 1}`, `active -> ${item.label}`, item.focusRef),
+        ),
+        ...runMonitor.escalationItems.map((item, index) =>
+          buildCompartment(`run-monitor-escalation-${index + 1}`, `escalation -> ${item.label}`, item.focusRef),
+        ),
+        ...runMonitor.acceptanceItems.map((item, index) =>
+          buildCompartment(`run-monitor-acceptance-${index + 1}`, `acceptance -> ${item.label}`, item.focusRef),
+        ),
+        ...runMonitor.coverageItems.map((item, index) =>
+          buildCompartment(`run-monitor-coverage-${index + 1}`, `coverage -> ${item.label}`, item.focusRef),
+        ),
+      ].slice(0, 8),
+      tone: runMonitor.escalationCount > 0 ? 'attention' : runMonitor.activeCount > 0 ? 'ready' : 'calm',
+      accent: '#f97316',
+    })
+  }
+
+  if (roomPreview) {
+    cards.push(
+      {
+        id: 'closet-continuity',
+        title: 'Continuity closet',
+        summary: 'Tunnels, runs, and open questions that keep the room moving forward.',
+        sourceLabel: 'Continuity',
+        compartments: [
+          ...(roomPreview.latestRunLabel ? [buildCompartment('continuity-run', roomPreview.latestRunLabel, room ? worldRef('room', room.id) : undefined)] : []),
+          ...roomTunnels.map((tunnel) => {
+            const other = tunnel.from.id === room?.id ? tunnel.to : tunnel.from
+            return buildCompartment(
+              `tunnel-${tunnel.id}`,
+              `tunnel -> ${tunnel.label}`,
+              other.kind !== 'artifact' ? worldRef(other.kind, other.id) : worldRef('artifact', other.id),
+            )
+          }),
+          ...roomPreview.openQuestionLabels.map((question, index) => buildCompartment(`question-${index + 1}`, `question -> ${question}`)),
+        ],
+        tone: roomPreview.openQuestionLabels.length > 0 ? 'attention' : 'calm',
+        accent: '#fb7185',
+      },
+    )
+  }
 
   if (locusPreview) {
     cards.push({
@@ -894,27 +1339,27 @@ function buildClosetCards(
       title: `${locusPreview.title} closet`,
       summary: 'The active locus unfolded into its actors and attached artifacts.',
       sourceLabel: locusPreview.kindLabel,
-      drawers: [
+      compartments: [
         ...(locus
           ? displayActorsForLocus(index, locus).map((actor) =>
-              buildDrawer(`actor-${actor.id}`, `actor -> ${actor.title}`, worldRef(actor.kind, actor.id)),
+              buildCompartment(`actor-${actor.id}`, `actor -> ${actor.title}`, worldRef(actor.kind, actor.id)),
             )
-          : locusPreview.actorLabels.map((actor, index) => buildDrawer(`actor-${index + 1}`, `actor -> ${actor}`))),
+          : locusPreview.actorLabels.map((actor, index) => buildCompartment(`actor-${index + 1}`, `actor -> ${actor}`))),
         ...(locus
           ? locus.artifactIds
               .map((artifactId) => index.artifactById.get(artifactId))
               .filter((artifact): artifact is NonNullable<typeof artifact> => artifact !== undefined)
               .map((artifact) =>
-                buildDrawer(`artifact-${artifact.id}`, `artifact -> ${artifact.title}`, worldRef('artifact', artifact.id)),
+                buildCompartment(`artifact-${artifact.id}`, `artifact -> ${artifact.title}`, worldRef('artifact', artifact.id)),
               )
-          : locusPreview.artifactLabels.map((artifact, index) => buildDrawer(`artifact-${index + 1}`, `artifact -> ${artifact}`))),
+          : locusPreview.artifactLabels.map((artifact, index) => buildCompartment(`artifact-${index + 1}`, `artifact -> ${artifact}`))),
       ],
       tone: 'ready',
       accent: '#2dd4bf',
     })
   }
 
-  return cards.filter((card) => card.summary.trim() || card.drawers.length > 0)
+  return cards.filter((card) => card.summary.trim() || card.compartments.length > 0)
 }
 
 function buildDrillStages(
@@ -976,6 +1421,7 @@ function buildProjectionStage(
   graph: WorldGraph,
   snapshot: WorldShellWorkspaceSnapshot,
   problemsById: Map<string, WorkflowCard>,
+  runMonitor: RunMonitorSnapshot,
   roomId: string | null,
   locusId: string | null,
   focusRef: WorldRef | null,
@@ -1125,8 +1571,8 @@ function buildProjectionStage(
               : [],
           },
           {
-            id: 'drawers',
-            title: 'Closets and drawers',
+            id: 'compartments',
+            title: 'Closets and compartments',
             style: 'list' as const,
             copy: 'Summaries stay on the surface; the exact artifacts remain one unfold away.',
             items: blueprint
@@ -1134,7 +1580,7 @@ function buildProjectionStage(
                   ...blueprint.anchors.map((anchor, index) =>
                     buildStageItem(
                       `anchor-${index + 1}`,
-                      `drawer -> ${compactLabel(anchor)}`,
+                      `compartment -> ${compactLabel(anchor)}`,
                       selectedRoom ? worldRef('room', selectedRoom.id) : undefined,
                     ),
                   ),
@@ -1144,6 +1590,31 @@ function buildProjectionStage(
           },
           ...locusDetailSection,
         ]
+      : mode === 'earth'
+        ? [
+            ...buildRunMonitorDetailSections(runMonitor),
+            {
+              id: 'earth-return',
+              title: 'Magnetic return',
+              style: 'list' as const,
+              tone: 'calm' as const,
+              copy: 'Earth remembers the last active territory and can drop back into the current room instantly.',
+              items: limitStageItems([
+                ...graph.wings.map((wing) =>
+                  buildStageItem(`earth-wing-${wing.id}`, `wing -> ${wing.title}`, worldRef('wing', wing.id)),
+                ),
+                ...(selectedRoom
+                  ? [
+                      buildStageItem(
+                        'earth-resume',
+                        `resume -> ${selectedRoom.title}`,
+                        worldRef('room', selectedRoom.id),
+                      ),
+                    ]
+                  : []),
+              ], 5),
+            },
+          ]
       : mode === 'outline'
         ? [
             {
@@ -1174,6 +1645,8 @@ function buildProjectionStage(
                 ...trailheadItems,
               ], 6),
             },
+            ...buildBriefStatusSections(selectedProblem, selectedProblem ? latestRun(selectedProblem) : undefined, selectedRoom),
+            ...buildDependencySatisfactionSections(selectedProblem, problemsById),
             ...locusDetailSection,
           ]
         : mode === 'packet'
@@ -1201,27 +1674,44 @@ function buildProjectionStage(
                           ]
                         : []),
                       ...blueprint.handoffLines.map((line, lineIndex) => {
-                        if (line.startsWith('room_id: ')) {
+                        if (line.startsWith('room_id: ') || line.startsWith('rid:')) {
                           return buildStageItem(`packet-line-${lineIndex}`, line, selectedRoom ? worldRef('room', selectedRoom.id) : undefined)
                         }
-                        if (line.startsWith('memory_wing: ')) {
+                        if (line.startsWith('memory_wing: ') || line.startsWith('mw:')) {
                           return buildStageItem(`packet-line-${lineIndex}`, line, selectedRoom ? worldRef('wing', selectedRoom.wingId) : undefined)
                         }
-                        if (line.startsWith('memory_room: ')) {
+                        if (line.startsWith('memory_room: ') || line.startsWith('mr:')) {
                           return buildStageItem(`packet-line-${lineIndex}`, line, selectedRoom ? worldRef('room', selectedRoom.id) : undefined)
                         }
-                        if (line.startsWith('context_summary: ')) {
+                        if (line.startsWith('context_summary: ') || line.startsWith('ctx:')) {
                           return buildStageItem(`packet-line-${lineIndex}`, line, selectedRoom ? worldRef('room', selectedRoom.id) : undefined)
                         }
-                        if (line.startsWith('anchors: ')) {
+                        if (line.startsWith('anchors: ') || line.startsWith('a:')) {
                           return buildStageItem(`packet-line-${lineIndex}`, line, selectedRoom ? worldRef('room', selectedRoom.id) : undefined)
                         }
-                        if (line.startsWith('phone_brief: ') || line.startsWith('desktop_brief: ')) {
+                        if (
+                          line.startsWith('phone_brief: ') ||
+                          line.startsWith('desktop_brief: ') ||
+                          line.startsWith('pb:') ||
+                          line.startsWith('db:')
+                        ) {
                           return buildStageItem(`packet-line-${lineIndex}`, line, selectedRoom ? worldRef('room', selectedRoom.id) : undefined)
                         }
                         const palaceLocusMatch = line.match(/^palace_locus_(\d+): /)
+                        const rtkLocusMatch = line.match(/^l(\d+):/)
                         if (palaceLocusMatch) {
                           const locusIndex = Number(palaceLocusMatch[1]) - 1
+                          const packetLocus = blueprint.visualLoci[locusIndex]
+                          return buildStageItem(
+                            `packet-line-${lineIndex}`,
+                            line,
+                            packetLocus
+                              ? locusRefForBlueprint(index, selectedRoom?.id ?? null, packetLocus.id)
+                              : undefined,
+                          )
+                        }
+                        if (rtkLocusMatch) {
+                          const locusIndex = Number(rtkLocusMatch[1]) - 1
                           const packetLocus = blueprint.visualLoci[locusIndex]
                           return buildStageItem(
                             `packet-line-${lineIndex}`,
@@ -1284,30 +1774,7 @@ function buildProjectionStage(
                   ], 6),
                 },
               ]
-            : mode === 'earth'
-              ? [
-                  {
-                    id: 'earth-return',
-                    title: 'Magnetic return',
-                    style: 'list' as const,
-                    copy: 'Earth remembers the last active territory and can drop back into the current room instantly.',
-                    items: limitStageItems([
-                      ...graph.wings.map((wing) =>
-                        buildStageItem(`earth-wing-${wing.id}`, `wing -> ${wing.title}`, worldRef('wing', wing.id)),
-                      ),
-                      ...(selectedRoom
-                        ? [
-                            buildStageItem(
-                              'earth-resume',
-                              `resume -> ${selectedRoom.title}`,
-                              worldRef('room', selectedRoom.id),
-                            ),
-                          ]
-                        : []),
-                    ], 5),
-                  },
-                ]
-              : [
+        : [
                   {
                     id: 'room-brief',
                     title: 'Room brief',
@@ -1319,6 +1786,8 @@ function buildProjectionStage(
                       ...trailheadItems,
                     ], 6),
                   },
+                  ...buildBriefStatusSections(selectedProblem, selectedProblem ? latestRun(selectedProblem) : undefined, selectedRoom),
+                  ...buildDependencySatisfactionSections(selectedProblem, problemsById),
                   ...locusDetailSection,
                 ]
 
@@ -1380,11 +1849,13 @@ export function buildWorldShellData(
   const entryWing =
     (graph.entryWingId ? index.wingById.get(graph.entryWingId) : null) ?? graph.wings[0] ?? null
   const locusPreview = buildLocusPreview(index, selectedLocusId)
+  const runMonitor = buildRunMonitorSnapshot(index, problemsById)
   const activeProjection = buildProjectionStage(
     index,
     graph,
     snapshot,
     problemsById,
+    runMonitor,
     selectedRoomCard?.id ?? null,
     selectedLocusId,
     activeFocusRef,
@@ -1398,6 +1869,7 @@ export function buildWorldShellData(
     roomPreview,
     locusPreview,
     activeProjection,
+    runMonitor,
   )
 
   return {

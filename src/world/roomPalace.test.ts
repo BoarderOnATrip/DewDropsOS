@@ -40,7 +40,7 @@ describe('buildRoomPalaceMapping', () => {
       'table',
       'wall',
       'shelf',
-      'drawer',
+      'compartment',
       'window',
       'floor',
       'console',

@@ -23,7 +23,7 @@ function problem(overrides: Partial<WorkflowCard> = {}): WorkflowCard {
     memoryWing: 'relay-wing',
     memoryRoom: 'screening-bay',
     memoryContextSummary: 'Compact relay context.',
-    memoryAnchors: ['drawer/phone'],
+    memoryAnchors: ['compartment/phone'],
     memoryPalaceLoci: [
       {
         id: 'north-star',
@@ -34,6 +34,8 @@ function problem(overrides: Partial<WorkflowCard> = {}): WorkflowCard {
     ],
     phoneRelayBrief: 'Escalate only urgent approvals.',
     desktopSessionBrief: 'Use the desktop for deep implementation.',
+    capabilityProfileId: 'build-local',
+    swarmRecipeId: 'build-review-ship',
     ...overrides,
   }
 }
@@ -72,7 +74,7 @@ describe('PhoneRelayShell', () => {
           memoryWing: 'release-wing',
           memoryRoom: 'tracking-bay',
           memoryContextSummary: 'Release coordination context.',
-          memoryAnchors: ['drawer/release'],
+          memoryAnchors: ['compartment/release'],
         }),
         {
           id: 'a1',
@@ -109,6 +111,7 @@ describe('PhoneRelayShell', () => {
     expect(screen.getByText('Visual memory palace')).toBeInTheDocument()
     expect(screen.getByText('Keep the relay mission visible.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Jump to desktop' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Focus' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Focus Shipping flow' }))
 
@@ -127,7 +130,96 @@ describe('PhoneRelayShell', () => {
       />,
     )
 
-    expect(screen.getByText('No problem cards yet.')).toBeInTheDocument()
+    expect(screen.getByText('No rooms are active yet.')).toBeInTheDocument()
     expect(screen.getByText('Select a problem')).toBeInTheDocument()
+  })
+
+  it('renders a decision inbox for acceptance and escalation states', () => {
+    render(
+      <PhoneRelayShell
+        {...buildPhoneRelayShellData({
+          workspaceName: 'DewDrops',
+          workspaceMode: 'phone',
+          selectedProblemId: 'p2',
+          bridgeHealth: { ok: true },
+          cards: [
+            problem({
+              runLedger: [
+                {
+                  runId: 'run-accept',
+                  contractId: 'contract-accept',
+                  roomId: 'room-1',
+                  title: 'Acceptance pass',
+                  status: 'complete',
+                  startedAt: '2026-04-16T12:00:00Z',
+                  completedAt: '2026-04-16T12:10:00Z',
+                  continuationDecision: 'complete',
+                  artifacts: [
+                    {
+                      id: 'artifact-1',
+                      runId: 'run-accept',
+                      kind: 'plan',
+                      title: 'CRM schema',
+                      summary: 'Draft schema ready for review.',
+                      createdAt: '2026-04-16T12:09:00Z',
+                    },
+                  ],
+                  selfEvaluation: {
+                    alignmentSummary: 'Defined the CRM schema and mapped it to the brief.',
+                    criteriaChecks: [],
+                    allCriteriaMet: true,
+                    criteriaCovered: ['ac-1'],
+                    criteriaRemaining: [],
+                    nextAction: null,
+                    escalationReason: null,
+                    assumptions: ['SQLite is sufficient for the first offline slice.'],
+                    handoffNotes:
+                      'dec:Keep SQLite for the offline MVP\nwhy:It minimizes setup and preserves local-first behavior\nwatch:Revisit when sync arrives',
+                  },
+                },
+              ],
+            }),
+            problem({
+              id: 'p2',
+              title: 'Escalated brief',
+              mission: 'Resolve the contradiction.',
+              memoryWing: 'escalation-wing',
+              memoryRoom: 'review-bay',
+              runLedger: [
+                {
+                  runId: 'run-escalate',
+                  contractId: 'contract-escalate',
+                  roomId: 'room-2',
+                  title: 'Contradiction pass',
+                  status: 'complete',
+                  startedAt: '2026-04-17T10:00:00Z',
+                  completedAt: '2026-04-17T10:05:00Z',
+                  continuationDecision: 'escalate',
+                  artifacts: [],
+                  selfEvaluation: {
+                    alignmentSummary: 'Stopped before building the wrong outcome.',
+                    criteriaChecks: [],
+                    allCriteriaMet: false,
+                    criteriaCovered: [],
+                    criteriaRemaining: ['ac-2'],
+                    nextAction: null,
+                    escalationReason: 'The brief asks for offline-first behavior while requiring a live-only API.',
+                    assumptions: [],
+                    handoffNotes: '',
+                  },
+                },
+              ],
+            }),
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.getAllByText('Decision inbox').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Awaiting acceptance').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Needs attention').length).toBeGreaterThan(0)
+    expect(
+      screen.getByText('The brief asks for offline-first behavior while requiring a live-only API.'),
+    ).toBeInTheDocument()
   })
 })

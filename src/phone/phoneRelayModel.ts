@@ -6,7 +6,15 @@ import {
   buildProblemSessionReadiness,
   type ProblemSessionReadiness,
 } from '../freeform/sessionReadiness'
-import type { DewDropsWorkspaceMode, MemoryPalaceLocus, WorkflowCard } from '../freeform/types'
+import { parseHandoffNotes } from '../freeform/rtk'
+import type {
+  ArtifactStatus,
+  DewDropsWorkspaceMode,
+  MemoryPalaceLocus,
+  RunArtifact,
+  RunLedgerEntry,
+  WorkflowCard,
+} from '../freeform/types'
 import { buildRoomPalaceMapping } from '../world/roomPalace'
 import { buildSpatialRoomScene, type SpatialRoomScene } from '../spatial/spatialRoom'
 
@@ -35,6 +43,29 @@ export type PhoneRelayProblemCard = {
   readinessTone?: ProblemSessionReadiness['tone']
   latestRunLabel?: string
   latestRunSummary?: string
+  decisionLabel?: string
+  decisionTone?: ProblemSessionReadiness['tone']
+  pendingArtifactCount?: number
+  criteriaRemainingCount?: number
+}
+
+export type PhoneRelayDecisionReasoning = {
+  dec: string
+  why: string
+  rej?: string
+  watch?: string
+}
+
+export type PhoneRelayDecisionInbox = {
+  label: string
+  tone: ProblemSessionReadiness['tone']
+  summary: string
+  escalationReason?: string
+  nextAction?: string
+  pendingArtifactCount: number
+  pendingArtifactLabels: string[]
+  criteriaRemaining: string[]
+  reasoning?: PhoneRelayDecisionReasoning
 }
 
 export type PhoneRelayCurrentProblem = PhoneRelayProblemCard & {
@@ -43,6 +74,7 @@ export type PhoneRelayCurrentProblem = PhoneRelayProblemCard & {
   anchorLabels?: string[]
   memoryPalaceLoci?: MemoryPalaceLocus[]
   spatialRoomScene?: SpatialRoomScene
+  decisionInbox?: PhoneRelayDecisionInbox
 }
 
 export type PhoneRelayShellData = {
@@ -76,6 +108,7 @@ export type PhoneRelayProblemView = {
   anchorLabels: string[]
   memoryPalaceLoci: MemoryPalaceLocus[]
   spatialRoomScene: SpatialRoomScene
+  decisionInbox: PhoneRelayDecisionInbox | null
 }
 
 export type PhoneRelayWorkspaceView = {
@@ -103,9 +136,84 @@ function runTimestamp(run: ButlerSwarmRun): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function runLedgerTimestamp(entry: RunLedgerEntry): number {
+  const raw = entry.completedAt ?? entry.startedAt
+  const parsed = Date.parse(raw)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function pickMostRecentRun(runs: readonly ButlerSwarmRun[]): ButlerSwarmRun | null {
   if (runs.length === 0) return null
   return [...runs].sort((left, right) => runTimestamp(right) - runTimestamp(left))[0] ?? null
+}
+
+function pickMostRecentRunLedgerEntry(entries: readonly RunLedgerEntry[] | undefined): RunLedgerEntry | null {
+  if (!entries || entries.length === 0) return null
+  return [...entries].sort((left, right) => runLedgerTimestamp(right) - runLedgerTimestamp(left))[0] ?? null
+}
+
+function artifactStatus(artifact: RunArtifact): ArtifactStatus {
+  return artifact.status ?? 'provisional'
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function buildDecisionInbox(problem: WorkflowCard): PhoneRelayDecisionInbox | null {
+  const latestEntry = pickMostRecentRunLedgerEntry(problem.runLedger)
+  if (!latestEntry) return null
+
+  const selfEvaluation = latestEntry.selfEvaluation
+  const pendingArtifacts = latestEntry.artifacts.filter((artifact) => artifactStatus(artifact) === 'provisional')
+  const criteriaRemaining = selfEvaluation?.criteriaRemaining ?? []
+  const nextAction = selfEvaluation?.nextAction?.trim() || undefined
+  const escalationReason = selfEvaluation?.escalationReason?.trim() || undefined
+  const parsedReasoning = selfEvaluation?.handoffNotes
+    ? parseHandoffNotes(selfEvaluation.handoffNotes)
+    : null
+
+  let label: string
+  let tone: ProblemSessionReadiness['tone']
+  let summary: string
+
+  if (escalationReason || latestEntry.continuationDecision === 'escalate') {
+    label = 'Needs attention'
+    tone = 'attention'
+    summary = escalationReason ?? 'Outcome-level contradiction detected in the brief.'
+  } else if (pendingArtifacts.length > 0) {
+    label = 'Awaiting acceptance'
+    tone = 'attention'
+    summary = `${pluralize(pendingArtifacts.length, 'provisional artifact')} waiting for review.`
+  } else if (nextAction || criteriaRemaining.length > 0 || latestEntry.continuationDecision === 'continue') {
+    label = 'Next move queued'
+    tone = 'ready'
+    summary =
+      nextAction ??
+      `${pluralize(criteriaRemaining.length, 'acceptance criterion', 'acceptance criteria')} still open.`
+  } else if (latestEntry.continuationDecision === 'complete') {
+    label = 'Ready to close'
+    tone = 'ready'
+    summary = 'All criteria are marked complete and no provisional artifacts remain.'
+  } else if (selfEvaluation?.alignmentSummary?.trim()) {
+    label = 'Aligned'
+    tone = 'ready'
+    summary = selfEvaluation.alignmentSummary.trim()
+  } else {
+    return null
+  }
+
+  return {
+    label,
+    tone,
+    summary,
+    escalationReason,
+    nextAction,
+    pendingArtifactCount: pendingArtifacts.length,
+    pendingArtifactLabels: pendingArtifacts.map((artifact) => `${artifact.kind}: ${artifact.title}`),
+    criteriaRemaining,
+    reasoning: parsedReasoning ?? undefined,
+  }
 }
 
 function matchesProblemRun(run: ButlerSwarmRun, problem: WorkflowCard): boolean {
@@ -184,6 +292,9 @@ export function buildPhoneRelayWorkspaceView(
     const readiness = buildProblemSessionReadiness(problem, {
       workspaceMode,
       agentCount,
+      agentCards: allCards.filter(
+        (card) => card.kind === 'agent' && card.assignedToProblemId === problem.id,
+      ),
       bridgeHealth,
       blueprint,
     })
@@ -193,6 +304,7 @@ export function buildPhoneRelayWorkspaceView(
     const packetLines = buildPacketLines(problem, blueprint, readiness, agentCount, problemLatestRun)
     const roomLabel = buildRoomLabel(blueprint)
     const projectionLabel = buildProjectionLabel(workspaceMode, blueprint.launchSurfaceLabel)
+    const decisionInbox = buildDecisionInbox(problem)
     const roomPalace = buildRoomPalaceMapping({
       title: roomLabel,
       summary: blueprint.contextSummary,
@@ -246,6 +358,7 @@ export function buildPhoneRelayWorkspaceView(
       anchorLabels: blueprint.anchors,
       memoryPalaceLoci: blueprint.visualLoci,
       spatialRoomScene,
+      decisionInbox,
     }
   })
 
@@ -305,6 +418,10 @@ export function buildPhoneRelayShellData(snapshot: PhoneRelayWorkspaceSnapshot):
       readinessTone: entry.readiness.tone,
       latestRunLabel: entry.latestRun ? formatRunStatus(entry.latestRun.status) : 'No run yet',
       latestRunSummary: entry.latestRun?.summary?.trim() || undefined,
+      decisionLabel: entry.decisionInbox?.label,
+      decisionTone: entry.decisionInbox?.tone,
+      pendingArtifactCount: entry.decisionInbox?.pendingArtifactCount,
+      criteriaRemainingCount: entry.decisionInbox?.criteriaRemaining.length,
     })),
     selectedProblemId: selected?.problem.id ?? null,
     currentProblem: selected
@@ -329,6 +446,11 @@ export function buildPhoneRelayShellData(snapshot: PhoneRelayWorkspaceSnapshot):
           anchorLabels: selected.anchorLabels,
           memoryPalaceLoci: selected.memoryPalaceLoci,
           spatialRoomScene: selected.spatialRoomScene,
+          decisionLabel: selected.decisionInbox?.label,
+          decisionTone: selected.decisionInbox?.tone,
+          pendingArtifactCount: selected.decisionInbox?.pendingArtifactCount,
+          criteriaRemainingCount: selected.decisionInbox?.criteriaRemaining.length,
+          decisionInbox: selected.decisionInbox ?? undefined,
         }
       : null,
     readinessText: selected?.readiness.summary ?? 'Select a problem to inspect readiness.',

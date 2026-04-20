@@ -1,5 +1,9 @@
 import type { ButlerBridgeHealth } from '../lib/butlerBridge'
+import { agentRunsInCliTerminal } from './agentRuntime'
+import { getCapabilityProfile } from './capabilityProfiles'
+import { buildProblemApprovalHooks, formatSocialTargetLabel } from './launchMetadata'
 import type { ProblemSessionBlueprint } from './sessionBlueprint'
+import { getSwarmRecipe } from './swarmRecipes'
 import type { DewDropsWorkspaceMode, WorkflowCard } from './types'
 
 export type SessionReadinessTone = 'ready' | 'attention' | 'missing'
@@ -125,19 +129,59 @@ function deviceBriefItem(
   )
 }
 
+function agentRuntimeItem(agentCards: readonly WorkflowCard[]): SessionReadinessItem {
+  if (agentCards.length === 0) {
+    return item(
+      'runtime',
+      'Worker terminals',
+      'missing',
+      'No agents are assigned yet, so no worker terminals are bound to this room.',
+    )
+  }
+
+  const terminalCount = agentCards.filter((card) => agentRunsInCliTerminal(card)).length
+
+  if (terminalCount === agentCards.length) {
+    return item(
+      'runtime',
+      'Live terminals',
+      'ready',
+      `${terminalCount} of ${agentCards.length} assigned DewDrop${agentCards.length === 1 ? '' : 's'} are ready as terminal sessions.`,
+    )
+  }
+
+  if (terminalCount === 0) {
+    return item(
+      'runtime',
+      'Live terminals',
+      'missing',
+      'Assigned DewDrops are not yet bound to live terminals.',
+    )
+  }
+
+  return item(
+    'runtime',
+    'Live terminals',
+    'attention',
+    `${terminalCount} of ${agentCards.length} assigned DewDrops are live terminals. Bring the rest online before launch.`,
+  )
+}
+
 export function buildProblemSessionReadiness(
   problem: WorkflowCard,
   options: {
     workspaceMode: DewDropsWorkspaceMode
     agentCount: number
+    agentCards?: readonly WorkflowCard[]
     bridgeHealth: ButlerBridgeHealth | null
     blueprint: ProblemSessionBlueprint
   },
 ): ProblemSessionReadiness {
-  const { agentCount, bridgeHealth, blueprint, workspaceMode } = options
+  const { agentCount, agentCards = [], bridgeHealth, blueprint, workspaceMode } = options
+  const approvalHooks = buildProblemApprovalHooks(problem)
   const hasExplicitMemory =
     !!problem.memoryWing?.trim() && !!problem.memoryRoom?.trim() && !!problem.memoryContextSummary?.trim()
-  const anchorCount = problem.memoryAnchors?.filter((anchor) => anchor.trim()).length ?? 0
+  const anchorCount = blueprint.anchors.length
 
   const items: SessionReadinessItem[] = [
     item(
@@ -156,6 +200,7 @@ export function buildProblemSessionReadiness(
         ? `${agentCount} agent${agentCount === 1 ? '' : 's'} assigned to this problem room.`
         : 'No agents are assigned yet. Pull a team into the problem room before launch.',
     ),
+    agentRuntimeItem(agentCards),
     item(
       'memory',
       'Memory palace binding',
@@ -170,7 +215,7 @@ export function buildProblemSessionReadiness(
       anchorCount > 0 ? 'ready' : 'attention',
       anchorCount > 0
         ? `${anchorCount} anchor ref${anchorCount === 1 ? '' : 's'} pinned into the handoff packet.`
-        : 'No anchors pinned yet. Add drawers, entities, or room refs to improve continuity across sessions.',
+        : 'No anchors pinned yet. Add compartments, entities, or room refs to improve continuity across sessions.',
     ),
     deviceBriefItem(problem, blueprint),
     item(
@@ -181,7 +226,76 @@ export function buildProblemSessionReadiness(
         ? `Bound to Butler room ${problem.butlerRoomId}.`
         : 'This room will get a Butler room id on first launch so future resumes stay attached.',
     ),
+    (() => {
+      if (!problem.capabilityProfileId) {
+        return item(
+          'capability_profile',
+          'Capability profile',
+          'attention',
+          'No capability profile selected. Butler will use its default model and tool access for this job.',
+        )
+      }
+      const profile = getCapabilityProfile(problem.capabilityProfileId)
+      if (!profile) {
+        return item(
+          'capability_profile',
+          'Capability profile',
+          'attention',
+          `Profile "${problem.capabilityProfileId}" was not found in the catalog. Select a valid profile or clear this field.`,
+        )
+      }
+      return item(
+        'capability_profile',
+        'Capability profile',
+        'ready',
+        `Profile ${problem.capabilityProfileId} selected — Butler will apply its model and tool constraints.`,
+      )
+    })(),
+    (() => {
+      if (!problem.swarmRecipeId) {
+        return item(
+          'swarm_recipe',
+          'Swarm recipe',
+          'attention',
+          'No swarm recipe selected. Butler will compose the team from assigned agents without a role spec.',
+        )
+      }
+      const recipe = getSwarmRecipe(problem.swarmRecipeId)
+      if (!recipe) {
+        return item(
+          'swarm_recipe',
+          'Swarm recipe',
+          'attention',
+          `Recipe "${problem.swarmRecipeId}" was not found in the catalog. Select a valid recipe or clear this field.`,
+        )
+      }
+      return item(
+        'swarm_recipe',
+        'Swarm recipe',
+        'ready',
+        `Recipe ${problem.swarmRecipeId} selected — team composition and role objectives are set.`,
+      )
+    })(),
   ]
+
+  if (approvalHooks.approvalRequired) {
+    const targetLabels = approvalHooks.socialTargets.map(formatSocialTargetLabel)
+    const releaseLabel =
+      targetLabels.length > 0
+        ? targetLabels.join(', ')
+        : approvalHooks.publishCheckpoint ?? 'the publish checkpoint'
+
+    items.push(
+      item(
+        'approval_gate',
+        'Publish approval gate',
+        approvalHooks.configured ? 'ready' : 'attention',
+        approvalHooks.configured
+          ? `Human review stays in the loop before sending work toward ${releaseLabel}.`
+          : 'This room has publish targets or a release checkpoint, but the brief does not yet encode a clear review gate.',
+      ),
+    )
+  }
 
   const tone = maxTone(items)
   return {

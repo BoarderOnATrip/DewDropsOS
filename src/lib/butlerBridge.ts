@@ -1,3 +1,7 @@
+import type { BriefPacket } from '../freeform/briefSpec'
+import type { RtkBasis } from '../freeform/rtk'
+import type { SelfEvaluation } from '../freeform/types'
+
 const DEFAULT_BUTLER_BRIDGE_URL = 'http://127.0.0.1:8765'
 const BRIDGE_SETTINGS_KEY = 'dewdrops-butler-bridge-settings'
 
@@ -69,6 +73,14 @@ export type ButlerSwarmRunReport = {
   report_path: string
   exists: boolean
   content?: string
+  selfEvaluation?: SelfEvaluation
+  self_evaluation?: SelfEvaluation
+  briefVersion?: number
+  brief_version?: number
+  briefHash?: string
+  brief_hash?: string
+  continuationDecision?: 'continue' | 'complete' | 'escalate'
+  continuation_decision?: 'continue' | 'complete' | 'escalate'
 }
 
 export type ButlerUiTraceEvent = {
@@ -83,6 +95,11 @@ export type CreateSwarmContractInput = {
   title: string
   objective: string
   template: ButlerSwarmTemplate
+  capability_profile_id?: string
+  swarm_recipe_id?: string
+  rtk_basis?: RtkBasis
+  handoff_packet?: string
+  briefPacket?: BriefPacket
   agents?: Array<{
     id: string
     title: string
@@ -200,6 +217,11 @@ export async function createSwarmContract(
       title: payload.title,
       objective: payload.objective,
       template: payload.template,
+      capability_profile_id: payload.capability_profile_id,
+      swarm_recipe_id: payload.swarm_recipe_id,
+      rtk_basis: payload.rtk_basis,
+      handoff_packet: payload.handoff_packet,
+      brief_packet: payload.briefPacket,
       room_id: payload.room_id,
       room_kind: payload.room_kind ?? 'project',
       target: payload.target ?? 'local_desktop',

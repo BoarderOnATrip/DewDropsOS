@@ -22,7 +22,7 @@ describe('buildProblemSwarmObjective', () => {
       memoryWing: 'launch-wing',
       memoryRoom: 'operator-brief',
       memoryContextSummary: 'Carry the current launch context across surfaces.',
-      memoryAnchors: ['drawer/launch'],
+      memoryAnchors: ['compartment/launch'],
       memoryPalaceLoci: [
         {
           id: 'north-star',
@@ -58,6 +58,8 @@ describe('buildProblemSwarmObjective', () => {
     expect(text).toContain('Ship the board.')
     expect(text).toContain('API key?')
     expect(text).toContain('Worker')
+    expect(text).toContain('Worker terminals')
+    expect(text).toContain('terminal in .')
     expect(text).toContain('Memory palace context')
     expect(text).toContain('launch-wing')
     expect(text).toContain('Visual loci')

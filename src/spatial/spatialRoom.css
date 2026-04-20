@@ -236,7 +236,7 @@
   width: min(180px, 30%);
 }
 
-.spatial-room-node-drawer {
+.spatial-room-node-compartment {
   left: 18%;
   bottom: 20%;
   width: min(170px, 28%);
@@ -357,7 +357,7 @@
   .spatial-room-node-shelf,
   .spatial-room-node-window,
   .spatial-room-node-console,
-  .spatial-room-node-drawer,
+  .spatial-room-node-compartment,
   .spatial-room-node-checkpoint,
   .spatial-room-node-portal,
   .spatial-room-node-floor {

@@ -5,11 +5,31 @@ import type {
   ButlerSwarmRunReport,
   ButlerSwarmTemplate,
 } from '../../lib/butlerBridge'
+import type { BriefSpec } from '../briefSpec'
+import type { BriefCompartmentOption } from '../briefCompartments'
 import type { SessionReadinessItem, SessionReadinessTone } from '../sessionReadiness'
-import type { ButlerLaunchSurface, DewDropsWorkspaceMode, MemoryPalaceLocus } from '../types'
+import type {
+  ArtifactStatus,
+  ButlerLaunchSurface,
+  DewDropsWorkspaceMode,
+  MemoryPalaceLocus,
+  BriefCompartmentAsset,
+  AgentRuntimeBinding,
+  RunLedgerEntry,
+  WorkflowCard,
+} from '../types'
 import { memoryPalaceKindLabel } from '../visualMemoryPalace'
 import { formatRunStatus, swarmRunIsActive } from '../runFormat'
+import { BriefEditor } from './BriefEditor'
+import { CapabilityPackPicker, type CapabilityPackOption } from './CapabilityPackPicker'
+import { CapabilityProfilePicker, type CapabilityProfileOption } from './CapabilityProfilePicker'
+import { ContinuationDecisionPanel } from './ContinuationDecisionPanel'
+import { BriefCompartmentIntakePanel } from './BriefCompartmentIntakePanel'
+import { RunLedgerPanel } from './RunLedgerPanel'
 import { SwarmRunList } from './SwarmRunList'
+import { SwarmRecipePicker, type SwarmRecipeOption } from './SwarmRecipePicker'
+import { DewDropTerminalCard } from './DewDropTerminalCard'
+import { WorkerTerminalPanel } from './WorkerTerminalPanel'
 
 type TemplateOption = {
   value: ButlerSwarmTemplate
@@ -31,6 +51,14 @@ type ProblemSwarmInspectorProps = {
   workspaceMode: DewDropsWorkspaceMode
   workspaceOptions: Array<Option<DewDropsWorkspaceMode>>
   launchSurface: ButlerLaunchSurface
+  capabilityPackId: string
+  capabilityPackOptions: readonly CapabilityPackOption[]
+  capabilityProfileId: string
+  capabilityProfileOptions: readonly CapabilityProfileOption[]
+  swarmRecipeId: string
+  swarmRecipeOptions: readonly SwarmRecipeOption[]
+  briefSpec: BriefSpec
+  briefVersion: number
   launchSurfaceOptions: Array<Option<ButlerLaunchSurface>>
   template: ButlerSwarmTemplate
   templateOptions: TemplateOption[]
@@ -48,6 +76,17 @@ type ProblemSwarmInspectorProps = {
   memoryAnchors: string
   memoryPalaceDraft: string
   memoryPalaceLoci: MemoryPalaceLocus[]
+  briefCompartmentAssets: readonly BriefCompartmentAsset[]
+  briefCompartmentOptions: readonly BriefCompartmentOption[]
+  selectedAgent: WorkflowCard | null
+  workerAgents: readonly WorkflowCard[]
+  onWorkerTerminalTitleChange: (agentId: string, title: string) => void
+  onWorkerTerminalRuntimeChange: (agentId: string, patch: Partial<AgentRuntimeBinding>) => void
+  onWorkerTerminalStart: (agentId: string) => void
+  onWorkerTerminalStop: (agentId: string) => void
+  onWorkerTerminalRefresh: (agentId: string) => void
+  onWorkerTerminalSendInput: (agentId: string, input: string) => void
+  workerTerminalBusyIds: readonly string[]
   phoneBrief: string
   desktopBrief: string
   readinessTone: SessionReadinessTone
@@ -57,6 +96,7 @@ type ProblemSwarmInspectorProps = {
   handoffLines: string[]
   handoffText: string
   runs: ButlerSwarmRun[]
+  runLedger: readonly RunLedgerEntry[]
   currentRunId?: string
   currentRunReport: ButlerSwarmRunReport | null
   reportBusy: boolean
@@ -64,6 +104,10 @@ type ProblemSwarmInspectorProps = {
   stopBusy: boolean
   onWorkspaceModeChange: (value: DewDropsWorkspaceMode) => void
   onLaunchSurfaceChange: (value: ButlerLaunchSurface) => void
+  onCapabilityPackChange: (value: string) => void
+  onCapabilityProfileChange: (value: string) => void
+  onSwarmRecipeChange: (value: string) => void
+  onBriefChange: (value: BriefSpec) => void
   onTemplateChange: (value: ButlerSwarmTemplate) => void
   onObjectiveChange: (value: string) => void
   onRoomWidthChange: (value: number) => void
@@ -75,6 +119,9 @@ type ProblemSwarmInspectorProps = {
   onMemorySummaryChange: (value: string) => void
   onMemoryAnchorsChange: (value: string) => void
   onMemoryPalaceDraftChange: (value: string) => void
+  onBriefCompartmentFilesAdd: (files: File[]) => void
+  onBriefCompartmentAssetCompartmentChange: (assetId: string, compartmentId: string) => void
+  onBriefCompartmentAssetRemove: (assetId: string) => void
   onPhoneBriefChange: (value: string) => void
   onDesktopBriefChange: (value: string) => void
   onCopyPacket: () => void
@@ -84,6 +131,7 @@ type ProblemSwarmInspectorProps = {
   onStopRun: () => void
   onRefreshRuns: () => void
   onSelectRun: (runId: string) => void
+  onArtifactStatusChange: (runId: string, artifactId: string, status: ArtifactStatus) => void
 }
 
 function reportPreview(content: string | undefined): string {
@@ -101,6 +149,14 @@ export function ProblemSwarmInspector({
   workspaceMode,
   workspaceOptions,
   launchSurface,
+  capabilityPackId,
+  capabilityPackOptions,
+  capabilityProfileId,
+  capabilityProfileOptions,
+  swarmRecipeId,
+  swarmRecipeOptions,
+  briefSpec,
+  briefVersion,
   launchSurfaceOptions,
   template,
   templateOptions,
@@ -118,6 +174,17 @@ export function ProblemSwarmInspector({
   memoryAnchors,
   memoryPalaceDraft,
   memoryPalaceLoci,
+  briefCompartmentAssets,
+  briefCompartmentOptions,
+  selectedAgent,
+  workerAgents,
+  onWorkerTerminalTitleChange,
+  onWorkerTerminalRuntimeChange,
+  onWorkerTerminalStart,
+  onWorkerTerminalStop,
+  onWorkerTerminalRefresh,
+  onWorkerTerminalSendInput,
+  workerTerminalBusyIds,
   phoneBrief,
   desktopBrief,
   readinessTone,
@@ -127,6 +194,7 @@ export function ProblemSwarmInspector({
   handoffLines,
   handoffText,
   runs,
+  runLedger,
   currentRunId,
   currentRunReport,
   reportBusy,
@@ -134,6 +202,10 @@ export function ProblemSwarmInspector({
   stopBusy,
   onWorkspaceModeChange,
   onLaunchSurfaceChange,
+  onCapabilityPackChange,
+  onCapabilityProfileChange,
+  onSwarmRecipeChange,
+  onBriefChange,
   onTemplateChange,
   onObjectiveChange,
   onRoomWidthChange,
@@ -145,6 +217,9 @@ export function ProblemSwarmInspector({
   onMemorySummaryChange,
   onMemoryAnchorsChange,
   onMemoryPalaceDraftChange,
+  onBriefCompartmentFilesAdd,
+  onBriefCompartmentAssetCompartmentChange,
+  onBriefCompartmentAssetRemove,
   onPhoneBriefChange,
   onDesktopBriefChange,
   onCopyPacket,
@@ -154,12 +229,22 @@ export function ProblemSwarmInspector({
   onStopRun,
   onRefreshRuns,
   onSelectRun,
+  onArtifactStatusChange,
 }: ProblemSwarmInspectorProps) {
   const currentRun = runs.find((run) => run.id === currentRunId || run.run_id === currentRunId) ?? null
   const preview = reportPreview(currentRunReport?.content)
   const currentRunActive = swarmRunIsActive(currentRun?.status)
   const workspaceOption = workspaceOptions.find((option) => option.value === workspaceMode)
   const launchSurfaceOption = launchSurfaceOptions.find((option) => option.value === launchSurface)
+  const remainingWorkerAgents = selectedAgent
+    ? workerAgents.filter((agent) => agent.id !== selectedAgent.id)
+    : workerAgents
+  const currentLedgerEntry =
+    runLedger.find((entry) => entry.runId === currentRunId) ??
+    (currentRun
+      ? runLedger.find((entry) => entry.runId === currentRun.run_id || entry.runId === currentRun.id)
+      : undefined) ??
+    runLedger[0]
 
   return (
     <aside className="freeform-problem-inspector" aria-label="Selected problem swarm inspector">
@@ -167,7 +252,7 @@ export function ProblemSwarmInspector({
         <div>
           <h2>{title}</h2>
           <p>
-            {agentCount} agent{agentCount === 1 ? '' : 's'} in this swarm room
+            {agentCount} terminal{agentCount === 1 ? '' : 's'} working from this briefcase
             {roomId ? ` • ${roomId}` : ''}
           </p>
         </div>
@@ -234,6 +319,37 @@ export function ProblemSwarmInspector({
           ) : null}
         </div>
       </div>
+
+      <CapabilityPackPicker
+        value={capabilityPackId}
+        options={capabilityPackOptions}
+        onChange={onCapabilityPackChange}
+        disabled={launchBusy}
+      />
+
+      <CapabilityProfilePicker
+        value={capabilityProfileId}
+        options={capabilityProfileOptions}
+        onChange={onCapabilityProfileChange}
+        disabled={launchBusy}
+        emptyLabel="Use Butler defaults"
+      />
+
+      <SwarmRecipePicker
+        value={swarmRecipeId}
+        options={swarmRecipeOptions}
+        onChange={onSwarmRecipeChange}
+        disabled={launchBusy}
+        emptyLabel="Compose from assigned terminals"
+      />
+
+      <BriefEditor
+        title={`Brief • v${Math.max(briefVersion, 1)}`}
+        subtitle="Set the outcome once, load the briefcase with context and materials, then guide lightly or let the terminals run."
+        value={briefSpec}
+        onChange={onBriefChange}
+        disabled={launchBusy}
+      />
 
       <div className="freeform-problem-inspector-grid">
         <label className="freeform-field">
@@ -354,7 +470,7 @@ export function ProblemSwarmInspector({
             type="text"
             value={memoryAnchors}
             onChange={(e: ChangeEvent<HTMLInputElement>) => onMemoryAnchorsChange(e.target.value)}
-            placeholder="drawer/roadmap, entity/tyler, room/phone-relay"
+            placeholder="compartment/roadmap, entity/tyler, room/phone-relay"
           />
         </label>
 
@@ -380,7 +496,7 @@ export function ProblemSwarmInspector({
           <textarea
             value={memoryPalaceDraft}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onMemoryPalaceDraftChange(e.target.value)}
-            placeholder="North Star | north_star | Keep the user goal visible.\nScreening Bay | room | Phone triage and approvals.\nRoadmap Drawer | artifact | drawer/roadmap"
+            placeholder="North Star | north_star | Keep the user goal visible.\nScreening Bay | room | Phone triage and approvals.\nRoadmap Compartment | artifact | compartment/roadmap"
             rows={5}
           />
         </label>
@@ -388,6 +504,50 @@ export function ProblemSwarmInspector({
           One locus per line using `title | kind | detail`. Kinds: `north_star`, `room`, `portal`, `artifact`, `checkpoint`.
         </p>
       </div>
+
+      <BriefCompartmentIntakePanel
+        assets={briefCompartmentAssets}
+        compartmentOptions={briefCompartmentOptions}
+        disabled={launchBusy}
+        onAddFiles={onBriefCompartmentFilesAdd}
+        onCompartmentChange={onBriefCompartmentAssetCompartmentChange}
+        onRemove={onBriefCompartmentAssetRemove}
+      />
+
+      {selectedAgent ? (
+        <section className="freeform-problem-inspector-section" aria-label="Selected terminal">
+          <div className="freeform-toolbar-panel-problem">
+            <div>
+              <h3>Selected terminal</h3>
+              <p>Direct terminal view for the node you clicked.</p>
+            </div>
+          </div>
+          <DewDropTerminalCard
+            agent={selectedAgent}
+            busy={workerTerminalBusyIds.includes(selectedAgent.id)}
+            onTitleChange={onWorkerTerminalTitleChange}
+            onRuntimeChange={onWorkerTerminalRuntimeChange}
+            onStart={onWorkerTerminalStart}
+            onStop={onWorkerTerminalStop}
+            onRefresh={onWorkerTerminalRefresh}
+            onSendInput={onWorkerTerminalSendInput}
+            autoFocusInput
+          />
+        </section>
+      ) : null}
+
+      {remainingWorkerAgents.length > 0 || !selectedAgent ? (
+        <WorkerTerminalPanel
+          agents={remainingWorkerAgents}
+          busyAgentIds={workerTerminalBusyIds}
+          onTitleChange={onWorkerTerminalTitleChange}
+          onRuntimeChange={onWorkerTerminalRuntimeChange}
+          onStart={onWorkerTerminalStart}
+          onStop={onWorkerTerminalStop}
+          onRefresh={onWorkerTerminalRefresh}
+          onSendInput={onWorkerTerminalSendInput}
+        />
+      ) : null}
 
       <div className="freeform-problem-inspector-section">
         <div className="freeform-toolbar-panel-problem">
@@ -439,11 +599,11 @@ export function ProblemSwarmInspector({
       </div>
 
       <label className="freeform-field">
-        <span>Objective</span>
+        <span>Live steering</span>
         <textarea
           value={objective}
           onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onObjectiveChange(e.target.value)}
-          placeholder="Describe what this swarm should do."
+          placeholder="Add any live steering for this run. The brief remains the source of truth."
           rows={5}
           disabled={launchBusy}
         />
@@ -480,7 +640,7 @@ export function ProblemSwarmInspector({
             onClick={onCopyLaunchBrief}
             disabled={!objective.trim()}
           >
-            Copy launch brief
+            Copy run brief
           </button>
         </div>
       </div>
@@ -523,6 +683,20 @@ export function ProblemSwarmInspector({
         </div>
         <SwarmRunList runs={runs} currentRunId={currentRunId} onSelectRun={onSelectRun} />
       </div>
+
+      <RunLedgerPanel
+        entries={runLedger}
+        currentRunId={currentRunId ?? null}
+        onSelectRun={onSelectRun}
+        emptyText="Run ledger entries appear here after Butler returns summaries or reports."
+        onArtifactStatusChange={onArtifactStatusChange}
+      />
+
+      <ContinuationDecisionPanel
+        decision={currentLedgerEntry?.continuationDecision ?? null}
+        selfEvaluation={currentLedgerEntry?.selfEvaluation ?? null}
+        criteria={briefSpec.execution.acceptanceCriteria}
+      />
 
       <div className="freeform-problem-inspector-section">
         <div className="freeform-toolbar-panel-problem">

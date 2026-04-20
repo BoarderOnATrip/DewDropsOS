@@ -13,7 +13,7 @@ This product should not move the main UI onto an RTOS. The product stack should 
 2. Produce an editable room asset based on RoomPlan and ARKit scene reconstruction.
 3. Attach synchronized media context from AVFoundation capture.
 4. Move the room into an editable asset format centered on OpenUSD / USDZ.
-5. Open the room in the desktop forge, add portals, drawers, loci, and runtime surfaces.
+5. Open the room in the desktop forge, add portals, compartments, loci, and runtime surfaces.
 
 ## Product Direction
 

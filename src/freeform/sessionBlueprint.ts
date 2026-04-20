@@ -1,5 +1,8 @@
+import { normalizeBriefSpec } from './briefSpec'
 import type { ButlerLaunchSurface, DewDropsWorkspaceMode, WorkflowCard } from './types'
-import { buildVisualMemoryPalace, memoryPalacePacketLine } from './visualMemoryPalace'
+import { collectProblemAnchorRefs } from './briefCompartments'
+import { buildVisualMemoryPalace } from './visualMemoryPalace'
+import { buildRtkBasis, serializeRtkBasisLines, type RtkBasis } from './rtk'
 
 type Option<T extends string> = {
   value: T
@@ -66,9 +69,14 @@ export type ProblemSessionBlueprint = {
   memoryRoom: string
   contextSummary: string
   anchors: string[]
+  sourceMaterials: string[]
   visualLoci: ReturnType<typeof buildVisualMemoryPalace>
   phoneBrief: string
   desktopBrief: string
+  capabilityProfileId?: string
+  swarmRecipeId?: string
+  projectStructure: string[]
+  rtkBasis: RtkBasis
   handoffLines: string[]
   handoffText: string
   sourceRefs: string[]
@@ -122,25 +130,49 @@ export function buildProblemSessionBlueprint(
     problem.memoryContextSummary?.trim() ||
     problem.mission?.split(/\n+/).map((line) => line.trim()).find(Boolean) ||
     `Room context for ${problem.title}.`
-  const anchors = Array.isArray(problem.memoryAnchors)
-    ? problem.memoryAnchors.map((anchor) => anchor.trim()).filter(Boolean)
-    : []
+  const anchors = collectProblemAnchorRefs(problem)
+  const sourceMaterials = (problem.briefCompartmentAssets ?? []).map(
+    (asset) => `${asset.compartmentLabel} -> ${asset.name}`,
+  )
   const visualLoci = buildVisualMemoryPalace(problem)
   const phoneBrief = problem.phoneRelayBrief?.trim() || ''
   const desktopBrief = problem.desktopSessionBrief?.trim() || ''
-  const handoffLines = [
-    `room_id: ${problem.butlerRoomId ?? 'pending-local-room'}`,
-    `workspace: ${WORKSPACE_LABELS[workspaceMode]}`,
-    `launch_surface: ${SURFACE_LABELS[launchSurface]}`,
-    `target: ${target}`,
-    `memory_wing: ${memoryWing}`,
-    `memory_room: ${memoryRoom}`,
-    `context_summary: ${contextSummary}`,
-    ...(anchors.length > 0 ? [`anchors: ${anchors.join(' | ')}`] : []),
-    ...visualLoci.map((locus, index) => `palace_locus_${index + 1}: ${memoryPalacePacketLine(locus)}`),
-    ...(phoneBrief ? [`phone_brief: ${phoneBrief}`] : []),
-    ...(desktopBrief ? [`desktop_brief: ${desktopBrief}`] : []),
-  ]
+  const capabilityProfileId = problem.capabilityProfileId?.trim() || undefined
+  const swarmRecipeId = problem.swarmRecipeId?.trim() || undefined
+  const briefSpec = problem.briefSpec ? normalizeBriefSpec(problem.briefSpec, `brief-${problem.id}`) : null
+  const projectStructure = briefSpec?.execution.projectStructure ?? []
+  const rtkBasis = buildRtkBasis({
+    room_id: problem.butlerRoomId?.trim() || problem.id,
+    brief_version: problem.briefVersion,
+    target,
+    launcher,
+    workspace_mode: workspaceMode,
+    launch_surface: launchSurface,
+    memory_wing: memoryWing,
+    memory_room: memoryRoom,
+    context_summary: contextSummary,
+    anchors,
+    source_materials: sourceMaterials,
+    capability_profile_id: capabilityProfileId,
+    swarm_recipe_id: swarmRecipeId,
+    mission: briefSpec?.creative.mission ?? problem.mission,
+    beneficiary: briefSpec?.creative.beneficiary,
+    task: briefSpec?.execution.task,
+    acceptance_criteria: briefSpec?.execution.acceptanceCriteria.map((criterion) => `${criterion.id}:${criterion.description}`),
+    scope_in: briefSpec?.execution.scope.in,
+    scope_out: briefSpec?.execution.scope.out,
+    project_structure: projectStructure,
+    deliverables: briefSpec?.execution.deliverables,
+    milestone: briefSpec?.execution.milestone,
+    depends_on: briefSpec?.execution.dependsOn,
+    blocked_by: briefSpec?.execution.blockedBy,
+    escalation_policy: briefSpec?.escalationPolicy,
+    autonomy_policy: briefSpec?.autonomyPolicy,
+    phone_brief: phoneBrief,
+    desktop_brief: desktopBrief,
+    visual_loci: visualLoci,
+  })
+  const handoffLines = serializeRtkBasisLines(rtkBasis)
 
   return {
     workspaceMode,
@@ -153,13 +185,19 @@ export function buildProblemSessionBlueprint(
     memoryRoom,
     contextSummary,
     anchors,
+    sourceMaterials,
     visualLoci,
     phoneBrief,
     desktopBrief,
+    capabilityProfileId,
+    swarmRecipeId,
+    projectStructure,
+    rtkBasis,
     handoffLines,
     handoffText: handoffLines.join('\n'),
     sourceRefs: [
       `dewdrops/cards/${problem.id}`,
+      ...(problem.briefCompartmentAssets ?? []).slice(0, 8).map((asset) => `dewdrops/cards/${problem.id}/compartments/${asset.id}`),
       `lifegirdle/wings/${memoryWing}/rooms/${memoryRoom}`,
     ],
   }

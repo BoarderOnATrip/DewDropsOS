@@ -6,9 +6,11 @@ import {
   invokePaperclipAgent,
   listPaperclipAgents,
   listPaperclipCompanies,
+  listPaperclipIssueWorkProducts,
   listPaperclipProjects,
   loadPaperclipBridgeSettings,
   savePaperclipBridgeSettings,
+  updatePaperclipWorkProduct,
   upsertPaperclipIssueDocument,
   type PaperclipBridgeSettings,
 } from './paperclipBridge'
@@ -131,6 +133,7 @@ describe('paperclipBridge requests', () => {
         description: 'Launch the room.',
         assigneeAgentId: 'agent-1',
         projectId: 'project-1',
+        executionWorkspaceSettings: { mode: 'isolated_workspace' },
       }),
     ).resolves.toEqual(expect.objectContaining({
       id: 'issue-1',
@@ -163,6 +166,7 @@ describe('paperclipBridge requests', () => {
       'http://127.0.0.1:3100/api/companies/company-1/issues',
       expect.objectContaining({
         method: 'POST',
+        body: expect.stringContaining('"executionWorkspaceSettings":{"mode":"isolated_workspace"}'),
       }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -177,6 +181,78 @@ describe('paperclipBridge requests', () => {
       'http://127.0.0.1:3100/api/agents/agent-1/heartbeat/invoke',
       expect.objectContaining({
         method: 'POST',
+      }),
+    )
+  })
+
+  it('lists and updates issue work products', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: 'wp-1',
+            issueId: 'issue-1',
+            title: 'Run report',
+            type: 'document',
+            provider: 'paperclip',
+            externalId: 'run-1:artifact-1',
+            status: 'ready_for_review',
+            reviewState: 'needs_board_review',
+            metadata: { artifactStatus: 'provisional' },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'wp-1',
+          issueId: 'issue-1',
+          title: 'Run report',
+          type: 'document',
+          provider: 'paperclip',
+          externalId: 'run-1:artifact-1',
+          status: 'approved',
+          reviewState: 'approved',
+          metadata: { artifactStatus: 'accepted' },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(listPaperclipIssueWorkProducts(settings, 'issue-1')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'wp-1',
+        externalId: 'run-1:artifact-1',
+        status: 'ready_for_review',
+        reviewState: 'needs_board_review',
+      }),
+    ])
+
+    await expect(
+      updatePaperclipWorkProduct(settings, 'wp-1', {
+        status: 'approved',
+        reviewState: 'approved',
+        metadata: { artifactStatus: 'accepted' },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'wp-1',
+        status: 'approved',
+        reviewState: 'approved',
+      }),
+    )
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'http://127.0.0.1:3100/api/issues/issue-1/work-products',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer secret-token' }),
+      }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'http://127.0.0.1:3100/api/work-products/wp-1',
+      expect.objectContaining({
+        method: 'PATCH',
       }),
     )
   })

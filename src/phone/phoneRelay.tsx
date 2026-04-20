@@ -62,6 +62,7 @@ export function PhoneRelayShell({
   const selectedAgentLabel = `${selectedAgentCount} agent${selectedAgentCount === 1 ? '' : 's'}`
   const roomLabel = selectedProblem?.roomLabel ?? 'Select a room'
   const projectionLabel = selectedProblem?.projectionLabel ?? workspaceProjectionLabel
+  const decisionInbox = selectedProblem?.decisionInbox
 
   return (
     <main className={`phone-relay-shell${className ? ` ${className}` : ''}`}>
@@ -77,10 +78,15 @@ export function PhoneRelayShell({
             {bridgeStatusLabel ?? 'Bridge offline'}
           </span>
           <span
-            className={`phone-relay-chip ${currentProblem?.readinessTone ? chipTone(currentProblem.readinessTone) : 'is-missing'}`}
+            className={`phone-relay-chip ${selectedProblem?.readinessTone ? chipTone(selectedProblem.readinessTone) : 'is-missing'}`}
           >
-            {currentProblem?.readinessLabel ?? 'No focus'}
+            {selectedProblem?.readinessLabel ?? 'No focus'}
           </span>
+          {decisionInbox ? (
+            <span className={`phone-relay-chip ${chipTone(decisionInbox.tone)}`}>
+              {decisionInbox.label}
+            </span>
+          ) : null}
           <span className="phone-relay-chip">{problemCountLabel}</span>
           <span className="phone-relay-chip">{selectedAgentLabel}</span>
           <span className="phone-relay-chip">{workspaceProjectionLabel}</span>
@@ -97,12 +103,12 @@ export function PhoneRelayShell({
           <div className="phone-relay-room-strip-copy">
             <p className="phone-relay-section-label">Active room</p>
             <h2>{roomLabel}</h2>
-            <p>{currentProblem?.roomSummary ?? 'Pick a room to see its projection, anchors, and tunnel packet.'}</p>
+            <p>{selectedProblem?.roomSummary ?? 'Pick a room to see its projection, anchors, and tunnel packet.'}</p>
           </div>
           <div className="phone-relay-room-strip-meta">
             <span>{projectionLabel}</span>
             <span>{selectedProblem?.surfaceLabel ?? 'Relay'}</span>
-            <span>{selectedProblem?.roomLabel ? `${selectedAgentLabel}` : 'No room selected'}</span>
+            <span>{selectedProblem ? selectedAgentLabel : 'No room selected'}</span>
           </div>
         </section>
 
@@ -112,17 +118,17 @@ export function PhoneRelayShell({
               <p className="phone-relay-section-label">Room index</p>
               <h2>Focus a room</h2>
             </div>
-            {currentProblem ? (
-              <span className={`phone-relay-chip ${currentProblem.readinessTone ? chipTone(currentProblem.readinessTone) : 'is-attention'}`}>
-                {currentProblem.readinessLabel ?? 'Ready'}
+            {selectedProblem ? (
+              <span className={`phone-relay-chip ${selectedProblem.readinessTone ? chipTone(selectedProblem.readinessTone) : 'is-attention'}`}>
+                {selectedProblem.readinessLabel ?? 'Ready'}
               </span>
             ) : null}
           </div>
 
           {problemList.length === 0 ? (
             <div className="phone-relay-empty">
-              <strong>No problem cards yet.</strong>
-              <p>Add a problem on the desktop board and the phone relay will pick it up here.</p>
+              <strong>No rooms are active yet.</strong>
+              <p>Add a problem on the desktop board and the relay will mirror it here.</p>
             </div>
           ) : (
             <div className="phone-relay-problem-list">
@@ -142,11 +148,18 @@ export function PhoneRelayShell({
                     >
                       <div className="phone-relay-problem-head">
                         <strong>{entry.title}</strong>
-                        {entry.readinessLabel ? (
-                          <span className={`phone-relay-chip ${entry.readinessTone ? chipTone(entry.readinessTone) : 'is-attention'}`}>
-                            {entry.readinessLabel}
-                          </span>
-                        ) : null}
+                        <div className="phone-relay-problem-chip-stack">
+                          {entry.decisionLabel ? (
+                            <span className={`phone-relay-chip ${entry.decisionTone ? chipTone(entry.decisionTone) : 'is-attention'}`}>
+                              {entry.decisionLabel}
+                            </span>
+                          ) : null}
+                          {entry.readinessLabel ? (
+                            <span className={`phone-relay-chip ${entry.readinessTone ? chipTone(entry.readinessTone) : 'is-attention'}`}>
+                              {entry.readinessLabel}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                       <p>{briefValue(entry.mission, 'No mission brief yet. Add one on the desktop board.')}</p>
                       <div className="phone-relay-problem-meta">
@@ -169,15 +182,6 @@ export function PhoneRelayShell({
               <p className="phone-relay-section-label">Focused room</p>
               <h2>{selectedProblem?.roomLabel ?? selectedProblem?.title ?? 'Select a problem'}</h2>
             </div>
-            {selectedProblem ? (
-              <button
-                type="button"
-                className="phone-relay-focus-button"
-                onClick={() => focusProblem(selectedProblem.id)}
-              >
-                Focus
-              </button>
-            ) : null}
           </div>
 
           {selectedProblem ? (
@@ -228,6 +232,75 @@ export function PhoneRelayShell({
                   </span>
                 </div>
                 <p className="phone-relay-detail-copy">{readinessText}</p>
+              </section>
+
+              <section className="phone-relay-section-card">
+                <div className="phone-relay-section-card-head">
+                  <h3>Decision inbox</h3>
+                  <span className={`phone-relay-chip ${decisionInbox ? chipTone(decisionInbox.tone) : 'is-ready'}`}>
+                    {decisionInbox?.label ?? 'Autonomous'}
+                  </span>
+                </div>
+                {decisionInbox ? (
+                  <div className="phone-relay-briefs">
+                    <div className="phone-relay-brief">
+                      <span>Status</span>
+                      <p>{decisionInbox.summary}</p>
+                    </div>
+                    {decisionInbox.nextAction ? (
+                      <div className="phone-relay-brief">
+                        <span>Next move</span>
+                        <p>{decisionInbox.nextAction}</p>
+                      </div>
+                    ) : null}
+                    {decisionInbox.pendingArtifactCount > 0 ? (
+                      <div className="phone-relay-brief">
+                        <span>Awaiting acceptance</span>
+                        <p>
+                          {decisionInbox.pendingArtifactCount} provisional artifact
+                          {decisionInbox.pendingArtifactCount === 1 ? '' : 's'} pending review.
+                          {decisionInbox.pendingArtifactLabels.length > 0
+                            ? ` ${decisionInbox.pendingArtifactLabels.slice(0, 3).join(' • ')}`
+                            : ''}
+                        </p>
+                      </div>
+                    ) : null}
+                    {decisionInbox.criteriaRemaining.length > 0 ? (
+                      <div className="phone-relay-brief">
+                        <span>Criteria remaining</span>
+                        <p>{decisionInbox.criteriaRemaining.join(' • ')}</p>
+                      </div>
+                    ) : null}
+                    {decisionInbox.reasoning?.dec ? (
+                      <div className="phone-relay-brief">
+                        <span>Decision</span>
+                        <p>{decisionInbox.reasoning.dec}</p>
+                      </div>
+                    ) : null}
+                    {decisionInbox.reasoning?.why ? (
+                      <div className="phone-relay-brief">
+                        <span>Why</span>
+                        <p>{decisionInbox.reasoning.why}</p>
+                      </div>
+                    ) : null}
+                    {decisionInbox.reasoning?.rej ? (
+                      <div className="phone-relay-brief">
+                        <span>Rejected</span>
+                        <p>{decisionInbox.reasoning.rej}</p>
+                      </div>
+                    ) : null}
+                    {decisionInbox.reasoning?.watch ? (
+                      <div className="phone-relay-brief">
+                        <span>Watch</span>
+                        <p>{decisionInbox.reasoning.watch}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="phone-relay-detail-copy">
+                    No human decision needed. Agents can keep moving from the brief until they hit acceptance or a real contradiction.
+                  </p>
+                )}
               </section>
 
               <section className="phone-relay-section-card">
@@ -283,8 +356,8 @@ export function PhoneRelayShell({
             </div>
           ) : (
             <div className="phone-relay-empty phone-relay-empty-detail">
-              <strong>No problem selected.</strong>
-              <p>Pick a problem from the list to inspect its readiness, packet, and latest run.</p>
+              <strong>No room selected.</strong>
+              <p>Pick a room from the list to inspect its readiness, packet, and latest run.</p>
             </div>
           )}
         </div>

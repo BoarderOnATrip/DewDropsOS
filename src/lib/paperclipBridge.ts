@@ -49,6 +49,37 @@ export type PaperclipIssueDocument = {
   latestRevisionId?: string | null
 }
 
+export type PaperclipIssueWorkProductStatus =
+  | 'active'
+  | 'ready_for_review'
+  | 'approved'
+  | 'changes_requested'
+  | 'merged'
+  | 'closed'
+  | 'failed'
+  | 'archived'
+  | 'draft'
+
+export type PaperclipIssueWorkProductReviewState =
+  | 'none'
+  | 'needs_board_review'
+  | 'approved'
+  | 'changes_requested'
+
+export type PaperclipIssueWorkProduct = {
+  id: string
+  issueId: string
+  title: string
+  type: string
+  provider: string
+  externalId?: string | null
+  status: PaperclipIssueWorkProductStatus
+  reviewState: PaperclipIssueWorkProductReviewState
+  summary?: string | null
+  metadata?: Record<string, unknown> | null
+  createdByRunId?: string | null
+}
+
 export type CreatePaperclipIssueInput = {
   companyId: string
   title: string
@@ -57,6 +88,12 @@ export type CreatePaperclipIssueInput = {
   priority?: string
   assigneeAgentId?: string
   projectId?: string
+  projectWorkspaceId?: string
+  executionWorkspacePreference?: 'reuse_existing'
+  executionWorkspaceSettings?: {
+    mode?: 'shared_workspace' | 'isolated_workspace' | 'operator_branch' | 'agent_default'
+  }
+  inheritExecutionWorkspaceFromIssueId?: string
 }
 
 export class PaperclipBridgeError extends Error {
@@ -232,6 +269,38 @@ function normalizeIssueDocument(raw: unknown): PaperclipIssueDocument | null {
   }
 }
 
+function normalizeIssueWorkProduct(raw: unknown): PaperclipIssueWorkProduct | null {
+  if (
+    !isRecord(raw) ||
+    typeof raw.id !== 'string' ||
+    typeof raw.issueId !== 'string' ||
+    typeof raw.title !== 'string' ||
+    typeof raw.type !== 'string' ||
+    typeof raw.provider !== 'string' ||
+    typeof raw.status !== 'string' ||
+    typeof raw.reviewState !== 'string'
+  ) {
+    return null
+  }
+  return {
+    id: raw.id,
+    issueId: raw.issueId,
+    title: raw.title,
+    type: raw.type,
+    provider: raw.provider,
+    externalId:
+      raw.externalId === null || typeof raw.externalId === 'string' ? raw.externalId : undefined,
+    status: raw.status as PaperclipIssueWorkProductStatus,
+    reviewState: raw.reviewState as PaperclipIssueWorkProductReviewState,
+    summary: raw.summary === null || typeof raw.summary === 'string' ? raw.summary : undefined,
+    metadata: isRecord(raw.metadata) ? raw.metadata : null,
+    createdByRunId:
+      raw.createdByRunId === null || typeof raw.createdByRunId === 'string'
+        ? raw.createdByRunId
+        : undefined,
+  }
+}
+
 export async function listPaperclipCompanies(
   settings: PaperclipBridgeSettings,
 ): Promise<PaperclipCompany[]> {
@@ -292,6 +361,10 @@ export async function createPaperclipIssue(
         priority: input.priority ?? 'high',
         assigneeAgentId: input.assigneeAgentId ?? null,
         projectId: input.projectId ?? null,
+        projectWorkspaceId: input.projectWorkspaceId ?? null,
+        executionWorkspacePreference: input.executionWorkspacePreference ?? null,
+        executionWorkspaceSettings: input.executionWorkspaceSettings ?? null,
+        inheritExecutionWorkspaceFromIssueId: input.inheritExecutionWorkspaceFromIssueId ?? null,
       }),
     },
   )
@@ -358,6 +431,39 @@ export async function upsertPaperclipIssueDocument(
     },
   )
   return entityFromPayload(payload, 'document', normalizeIssueDocument)
+}
+
+export async function listPaperclipIssueWorkProducts(
+  settings: PaperclipBridgeSettings,
+  issueId: string,
+): Promise<PaperclipIssueWorkProduct[]> {
+  const payload = await paperclipRequest<unknown>(
+    settings,
+    `/issues/${encodeURIComponent(issueId)}/work-products`,
+    {
+      headers: paperclipHeaders(settings, false),
+    },
+  )
+  return listFromPayload(payload, 'workProducts')
+    .map((entry) => normalizeIssueWorkProduct(entry))
+    .filter((entry): entry is PaperclipIssueWorkProduct => entry !== null)
+}
+
+export async function updatePaperclipWorkProduct(
+  settings: PaperclipBridgeSettings,
+  workProductId: string,
+  patch: Partial<Pick<PaperclipIssueWorkProduct, 'status' | 'reviewState' | 'summary' | 'metadata'>>,
+): Promise<PaperclipIssueWorkProduct> {
+  const payload = await paperclipRequest<unknown>(
+    settings,
+    `/work-products/${encodeURIComponent(workProductId)}`,
+    {
+      method: 'PATCH',
+      headers: paperclipHeaders(settings),
+      body: JSON.stringify(patch),
+    },
+  )
+  return entityFromPayload(payload, 'workProduct', normalizeIssueWorkProduct)
 }
 
 export async function invokePaperclipAgent(

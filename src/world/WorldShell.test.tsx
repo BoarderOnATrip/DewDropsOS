@@ -76,16 +76,16 @@ function closet(overrides: Partial<WorldClosetCard> = {}): WorldClosetCard {
   return {
     id: 'projection-room',
     title: 'Room closet',
-    summary: 'The currently unfolded room view and its most important drawers.',
+    summary: 'The currently unfolded room view and its most important compartments.',
     sourceLabel: 'Room view',
-    drawers: [
+    compartments: [
       {
-        id: 'drawer-actor-avery',
+        id: 'compartment-actor-avery',
         label: 'Room outline -> actor -> Avery',
         focusRef: worldRef('person', 'person-avery'),
       },
       {
-        id: 'drawer-locus-north-star',
+        id: 'compartment-locus-north-star',
         label: 'Room outline -> locus -> North Star',
         focusRef: worldRef('locus', 'locus-1'),
       },
@@ -100,7 +100,7 @@ describe('WorldShell', () => {
   it('renders an arrival re-entry overlay and allows skipping into context', async () => {
     const user = userEvent.setup()
 
-    render(
+    const { rerender } = render(
       <WorldShell
         title="DewDrops"
         hierarchy={{
@@ -129,6 +129,70 @@ describe('WorldShell', () => {
     await user.click(screen.getByRole('button', { name: 'Enter context now' }))
 
     expect(screen.queryByLabelText('Arrival transition')).not.toBeInTheDocument()
+
+    rerender(
+      <WorldShell
+        title="DewDrops, reloaded"
+        hierarchy={{
+          earth: 'Planetary memory',
+          wing: 'Revenue wing',
+          actor: 'Avery',
+          room: 'Launch Garden',
+        }}
+        arrivalMode="always"
+        arrivalDurationMs={100000}
+        drillStages={[
+          drillStage({
+            id: 'room',
+            label: 'Room',
+            value: 'Launch Garden',
+            detail: 'Focused operating surface and memory frame.',
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.queryByLabelText('Arrival transition')).not.toBeInTheDocument()
+  })
+
+  it('shows actionable empty states when there are no projections or rooms yet', async () => {
+    const user = userEvent.setup()
+    const onOpenDesktop = vi.fn()
+    const onOpenPhoneRelay = vi.fn()
+
+    render(
+      <WorldShell
+        title="DewDrops"
+        arrivalMode="never"
+        hierarchy={{
+          earth: 'Planetary memory',
+          wing: 'Revenue wing',
+          actor: 'Avery',
+          room: 'Launch Garden',
+        }}
+        projectionChips={[]}
+        roomCards={[]}
+        onOpenDesktop={onOpenDesktop}
+        onOpenPhoneRelay={onOpenPhoneRelay}
+      />,
+    )
+
+    expect(
+      screen.getByText(
+        'No projections yet. Open the current room or select a room card to unfold 3D, fold, outline, or packet views.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'No rooms yet. Create one to anchor a new context tunnel, or open the desktop room to keep working from the current context.',
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: 'Open desktop room' })[0])
+    await user.click(screen.getAllByRole('button', { name: 'Open phone relay' })[0])
+
+    expect(onOpenDesktop).toHaveBeenCalledWith(null)
+    expect(onOpenPhoneRelay).toHaveBeenCalledWith(null)
   })
 
   it('renders a clickable context tunnel with loci and detail panels', async () => {
@@ -335,7 +399,7 @@ describe('WorldShell', () => {
             title: 'Anchor closet',
             sourceLabel: 'Memory bind',
             summary: 'Stable refs and loci that let the room collapse and unfold without losing shape.',
-            drawers: [
+            compartments: [
               { id: 'anchor-entity-avery', label: 'entity/avery' },
               { id: 'anchor-locus-north-star', label: 'North Star', focusRef: worldRef('locus', 'locus-1') },
             ],
@@ -392,7 +456,7 @@ describe('WorldShell', () => {
 
     await user.click(screen.getByRole('button', { name: 'Closets' }))
 
-    expect(screen.getByText('Drawer preview')).toBeInTheDocument()
+    expect(screen.getByText('Compartment preview')).toBeInTheDocument()
     expect(screen.getByText('Room outline')).toBeInTheDocument()
     expect(screen.getByText('actor -> Avery')).toBeInTheDocument()
     const recentJumps = await screen.findByLabelText('Recent world jumps')
@@ -603,7 +667,7 @@ describe('WorldShell', () => {
               title: 'Anchor closet',
               sourceLabel: 'Memory bind',
               summary: 'Stable refs and loci that let the room collapse and unfold without losing shape.',
-              drawers: [
+              compartments: [
                 { id: 'anchor-entity-avery', label: 'entity/avery' },
                 { id: 'anchor-locus-north-star', label: 'North Star', focusRef: worldRef('locus', 'locus-1') },
               ],

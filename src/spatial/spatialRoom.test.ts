@@ -42,7 +42,7 @@ describe('buildSpatialRoomScene', () => {
         'table',
         'wall',
         'shelf',
-        'drawer',
+        'compartment',
         'window',
         'floor',
         'console',
@@ -68,6 +68,6 @@ describe('buildSpatialRoomScene', () => {
     })
 
     expect(scene.walk).toEqual([{ id: 'walk-empty', label: 'Add a locus', tone: 'attention' }])
-    expect(scene.nodes.find((node) => node.zoneId === 'portal')?.title).toBe('Portal stub')
+    expect(scene.nodes.find((node) => node.zoneId === 'portal')?.title).toBe('Portal opening')
   })
 })

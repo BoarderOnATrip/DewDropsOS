@@ -107,7 +107,7 @@ function zonePositionStyle(zoneId: string, index: number, total: number): CSSPro
     control_surface: { left: '64%', top: '29%' },
     archive_shelf: { left: '18%', top: '19%' },
     closet: { left: '18%', top: '63%' },
-    drawer: { left: '33%', top: '65%' },
+    compartment: { left: '33%', top: '65%' },
     phone_checkpoint: { left: '78%', top: '68%' },
   }
 
@@ -197,7 +197,7 @@ export function RoomAssetStudio({
                       </button>
                     )
                   })
-                : renderEmptyState('No zones yet', 'Add door, wall, shelf, drawer, window, console, or floor zones.')}
+                : renderEmptyState('No zones yet', 'Add door, wall, shelf, compartment, window, console, or floor zones.')}
             </div>
 
             <div className="room-asset-studio-portal-layer" aria-label="Room portals">
@@ -255,7 +255,7 @@ export function RoomAssetStudio({
                       <p>{locus.summary}</p>
                     </div>
                   ))
-                : renderEmptyState('No loci anchored yet', 'Place a North Star, console, drawer, or shelf locus.')}
+                : renderEmptyState('No loci anchored yet', 'Place a North Star, console, compartment, or shelf locus.')}
             </div>
           </article>
 

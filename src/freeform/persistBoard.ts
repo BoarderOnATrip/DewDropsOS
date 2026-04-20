@@ -1,4 +1,22 @@
-import type { BoardCamera, BoardWire, MemoryPalaceLocus, WorkflowCard } from './types'
+import type { AcceptanceCriterion, BriefExample, BriefSpec, CreativeBrief, ExecutionBrief } from './briefSpec'
+import type {
+  AgentRuntimeBinding,
+  AgentRuntimeKind,
+  AgentRuntimeProfile,
+  AgentRuntimeTransport,
+  ArtifactStatus,
+  BoardCamera,
+  BoardWire,
+  CriterionCheck,
+  MemoryPalaceLocus,
+  BriefCompartmentAsset,
+  RunArtifact,
+  RunArtifactKind,
+  RunLedgerEntry,
+  SelfEvaluation,
+  DewDropSessionApprovalGate,
+  WorkflowCard,
+} from './types'
 import { hedgerowsPresetAgentCount } from './presets/hedgerowsDeltaSquad'
 
 export const BOARD_STORAGE_KEY = 'dewdrops-board-state'
@@ -123,12 +141,315 @@ function isKind(k: unknown): k is WorkflowCard['kind'] {
   return k === 'problem' || k === 'agent' || k === 'surface'
 }
 
+function isRunArtifactKind(k: unknown): k is RunArtifactKind {
+  return k === 'report' || k === 'plan' || k === 'note' || k === 'error' || k === 'handoff'
+}
+
+function isArtifactStatus(s: unknown): s is ArtifactStatus {
+  return s === 'provisional' || s === 'accepted' || s === 'rejected'
+}
+
+function normalizeCompartmentAnchorRef(value: string): string {
+  return value.replace(/^drawer\//, 'compartment/')
+}
+
+function normalizeCompartmentLabel(value: string): string {
+  return value.replace(/\bDrawer\b/g, 'Compartment')
+}
+
+function isBriefCompartmentKind(kind: unknown): kind is BriefCompartmentAsset['compartmentKind'] {
+  return (
+    kind === 'north_star' ||
+    kind === 'reference' ||
+    kind === 'source' ||
+    kind === 'data' ||
+    kind === 'script' ||
+    kind === 'shotlist' ||
+    kind === 'capture' ||
+    kind === 'edit' ||
+    kind === 'publish' ||
+    kind === 'social' ||
+    kind === 'custom'
+  )
+}
+
+function isBriefCompartmentAssetStatus(status: unknown): status is BriefCompartmentAsset['organizeStatus'] {
+  return status === 'sorted' || status === 'review'
+}
+
+function parseBriefCompartmentAsset(raw: unknown): BriefCompartmentAsset | null {
+  if (!raw || typeof raw !== 'object') return null
+  const asset = raw as Record<string, unknown>
+  const compartmentId =
+    (isStr(asset.compartmentId) ? asset.compartmentId : undefined) ??
+    (isStr(asset.drawerId) ? asset.drawerId : undefined)
+  const compartmentLabel =
+    (isStr(asset.compartmentLabel) ? asset.compartmentLabel : undefined) ??
+    (isStr(asset.drawerLabel) ? asset.drawerLabel : undefined)
+  const compartmentKind =
+    (isStr(asset.compartmentKind) ? asset.compartmentKind : undefined) ??
+    (isStr(asset.drawerKind) ? asset.drawerKind : undefined)
+  if (
+    !isStr(asset.id) ||
+    !isStr(asset.name) ||
+    !isStr(asset.mimeType) ||
+    !isNum(asset.sizeBytes) ||
+    !isStr(asset.addedAt) ||
+    !isStr(compartmentId) ||
+    !isStr(compartmentLabel) ||
+    !isBriefCompartmentKind(compartmentKind) ||
+    !isStr(asset.anchorRef) ||
+    !isBriefCompartmentAssetStatus(asset.organizeStatus)
+  ) {
+    return null
+  }
+  const parsed: BriefCompartmentAsset = {
+    id: asset.id,
+    name: asset.name,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.sizeBytes,
+    addedAt: asset.addedAt,
+    compartmentId,
+    compartmentLabel: normalizeCompartmentLabel(compartmentLabel),
+    compartmentKind,
+    anchorRef: normalizeCompartmentAnchorRef(asset.anchorRef),
+    organizeStatus: asset.organizeStatus,
+  }
+  if (isStr(asset.extension)) parsed.extension = asset.extension
+  if (isStr(asset.organizeReason)) parsed.organizeReason = asset.organizeReason
+  if (isStr(asset.matchedLocusId)) parsed.matchedLocusId = asset.matchedLocusId
+  return parsed
+}
+
+function parseRunArtifact(raw: unknown): RunArtifact | null {
+  if (!raw || typeof raw !== 'object') return null
+  const a = raw as Record<string, unknown>
+  if (!isStr(a.id) || !isStr(a.runId) || !isRunArtifactKind(a.kind) || !isStr(a.title) || !isStr(a.summary) || !isStr(a.createdAt)) return null
+  const artifact: RunArtifact = { id: a.id, runId: a.runId, kind: a.kind, title: a.title, summary: a.summary, createdAt: a.createdAt }
+  if (isStr(a.content)) artifact.content = a.content
+  if (isArtifactStatus(a.status)) artifact.status = a.status
+  return artifact
+}
+
+function parseCriterionCheck(raw: unknown): CriterionCheck | null {
+  if (!raw || typeof raw !== 'object') return null
+  const c = raw as Record<string, unknown>
+  if (!isStr(c.criterionId) || !isBool(c.met) || !isStr(c.evidence)) return null
+  if (c.confidence !== 'high' && c.confidence !== 'medium' && c.confidence !== 'low') return null
+  return { criterionId: c.criterionId, met: c.met, evidence: c.evidence, confidence: c.confidence }
+}
+
+function parseSelfEvaluation(raw: unknown): SelfEvaluation | null {
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Record<string, unknown>
+  if (!isStr(s.alignmentSummary) || !isBool(s.allCriteriaMet)) return null
+  const criteriaChecks: CriterionCheck[] = Array.isArray(s.criteriaChecks)
+    ? s.criteriaChecks.map(parseCriterionCheck).filter((c): c is CriterionCheck => c !== null)
+    : []
+  const criteriaCovered = Array.isArray(s.criteriaCovered) && s.criteriaCovered.every(isStr) ? s.criteriaCovered as string[] : []
+  const criteriaRemaining = Array.isArray(s.criteriaRemaining) && s.criteriaRemaining.every(isStr) ? s.criteriaRemaining as string[] : []
+  const assumptions = Array.isArray(s.assumptions) && s.assumptions.every(isStr) ? s.assumptions as string[] : []
+  return {
+    alignmentSummary: s.alignmentSummary,
+    criteriaChecks,
+    allCriteriaMet: s.allCriteriaMet,
+    criteriaCovered,
+    criteriaRemaining,
+    nextAction: isStr(s.nextAction) ? s.nextAction : null,
+    escalationReason: isStr(s.escalationReason) ? s.escalationReason : null,
+    assumptions,
+    handoffNotes: isStr(s.handoffNotes) ? s.handoffNotes : '',
+  }
+}
+
+function parseRunLedgerEntry(raw: unknown): RunLedgerEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Record<string, unknown>
+  if (!isStr(e.runId) || !isStr(e.contractId) || !isStr(e.roomId) || !isStr(e.title) || !isStr(e.status) || !isStr(e.startedAt)) return null
+  const artifacts: RunArtifact[] = []
+  if (Array.isArray(e.artifacts)) {
+    for (const item of e.artifacts) {
+      const parsed = parseRunArtifact(item)
+      if (parsed) artifacts.push(parsed)
+    }
+  }
+  const entry: RunLedgerEntry = { runId: e.runId, contractId: e.contractId, roomId: e.roomId, title: e.title, status: e.status, startedAt: e.startedAt, artifacts }
+  if (isStr(e.capabilityProfileId)) entry.capabilityProfileId = e.capabilityProfileId
+  if (isStr(e.swarmRecipeId)) entry.swarmRecipeId = e.swarmRecipeId
+  if (isStr(e.completedAt)) entry.completedAt = e.completedAt
+  if (isStr(e.briefSpecId)) entry.briefSpecId = e.briefSpecId
+  if (isNum(e.briefVersion)) entry.briefVersion = e.briefVersion
+  if (isStr(e.briefHash)) entry.briefHash = e.briefHash
+  const selfEval = parseSelfEvaluation(e.selfEvaluation)
+  if (selfEval) entry.selfEvaluation = selfEval
+  if (e.continuationDecision === 'continue' || e.continuationDecision === 'complete' || e.continuationDecision === 'escalate') {
+    entry.continuationDecision = e.continuationDecision
+  }
+  return entry
+}
+
+function parseAcceptanceCriterion(raw: unknown): AcceptanceCriterion | null {
+  if (!raw || typeof raw !== 'object') return null
+  const c = raw as Record<string, unknown>
+  if (!isStr(c.id) || !isStr(c.description)) return null
+  const criterion: AcceptanceCriterion = { id: c.id, description: c.description }
+  if (isStr(c.verificationHint)) criterion.verificationHint = c.verificationHint
+  return criterion
+}
+
+function parseBriefExample(raw: unknown): BriefExample | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Record<string, unknown>
+  if (!isStr(e.label) || !isStr(e.ref) || !isStr(e.note)) return null
+  if (e.polarity !== 'good' && e.polarity !== 'bad') return null
+  return { label: e.label, ref: e.ref, note: e.note, polarity: e.polarity }
+}
+
+function parseCreativeBrief(raw: unknown): CreativeBrief | null {
+  if (!raw || typeof raw !== 'object') return null
+  const c = raw as Record<string, unknown>
+  if (!isStr(c.mission) || !isStr(c.beneficiary)) return null
+  const references = Array.isArray(c.references)
+    ? c.references.map(parseBriefExample).filter((e): e is BriefExample => e !== null)
+    : []
+  const creative: CreativeBrief = { mission: c.mission, beneficiary: c.beneficiary, references }
+  if (isStr(c.audience)) creative.audience = c.audience
+  if (isStr(c.tone)) creative.tone = c.tone
+  return creative
+}
+
+function parseExecutionBrief(raw: unknown): ExecutionBrief | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Record<string, unknown>
+  if (!isStr(e.task)) return null
+  const acceptanceCriteria = Array.isArray(e.acceptanceCriteria)
+    ? e.acceptanceCriteria.map(parseAcceptanceCriterion).filter((c): c is AcceptanceCriterion => c !== null)
+    : []
+  const scopeRaw = e.scope as Record<string, unknown> | undefined
+  const scopeIn = Array.isArray(scopeRaw?.in) && scopeRaw.in.every(isStr) ? scopeRaw.in as string[] : []
+  const scopeOut = Array.isArray(scopeRaw?.out) && scopeRaw.out.every(isStr) ? scopeRaw.out as string[] : []
+  const projectStructure = Array.isArray(e.projectStructure) && e.projectStructure.every(isStr)
+    ? e.projectStructure as string[]
+    : []
+  const antiPatterns = Array.isArray(e.antiPatterns) && e.antiPatterns.every(isStr) ? e.antiPatterns as string[] : []
+  const deliverables = Array.isArray(e.deliverables) && e.deliverables.every(isStr) ? e.deliverables as string[] : []
+  const execution: ExecutionBrief = {
+    task: e.task,
+    acceptanceCriteria,
+    scope: { in: scopeIn, out: scopeOut },
+    projectStructure,
+    antiPatterns,
+    deliverables,
+  }
+  if (isStr(e.milestone)) execution.milestone = e.milestone
+  if (Array.isArray(e.dependsOn) && e.dependsOn.every(isStr)) execution.dependsOn = e.dependsOn as string[]
+  if (Array.isArray(e.blockedBy) && e.blockedBy.every(isStr)) execution.blockedBy = e.blockedBy as string[]
+  if (isStr(e.deadline)) execution.deadline = e.deadline
+  if (isStr(e.effortHint)) execution.effortHint = e.effortHint
+  return execution
+}
+
+function parseBriefSpec(raw: unknown): BriefSpec | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as Record<string, unknown>
+  if (!isStr(b.id)) return null
+  const creative = parseCreativeBrief(b.creative)
+  const execution = parseExecutionBrief(b.execution)
+  if (!creative || !execution) return null
+  const escalationPolicy = b.escalationPolicy === 'outcome-contradiction-only' ? b.escalationPolicy : 'outcome-contradiction-only' as const
+  const validAutonomy = ['full-auto', 'milestone-checkpoint', 'per-run-checkpoint'] as const
+  const autonomyPolicy = validAutonomy.includes(b.autonomyPolicy as typeof validAutonomy[number])
+    ? b.autonomyPolicy as typeof validAutonomy[number]
+    : 'full-auto' as const
+  const spec: BriefSpec = { id: b.id, creative, execution, escalationPolicy, autonomyPolicy }
+  if (isStr(b.capabilityProfileId)) spec.capabilityProfileId = b.capabilityProfileId
+  if (isStr(b.swarmRecipeId)) spec.swarmRecipeId = b.swarmRecipeId
+  if (isStr(b.projectId)) spec.projectId = b.projectId
+  return spec
+}
+
+function parseAgentRuntime(raw: unknown): AgentRuntimeBinding | null {
+  if (!raw || typeof raw !== 'object') return null
+  const runtime = raw as Record<string, unknown>
+  const isKind = (value: unknown): value is AgentRuntimeKind => value === 'terminal' || value === 'service'
+  const isTransport = (value: unknown): value is AgentRuntimeTransport => value === 'cli' || value === 'api'
+  const isProfile = (value: unknown): value is AgentRuntimeProfile =>
+    value === 'openclaw' ||
+    value === 'codex' ||
+    value === 'claude-code' ||
+    value === 'paperclip' ||
+    value === 'custom'
+  const isApprovalGate = (value: unknown): value is DewDropSessionApprovalGate =>
+    value === 'destructive' || value === 'external_network' || value === 'privileged'
+
+  if (!isStr(runtime.instanceLabel)) {
+    return null
+  }
+
+  const legacyProfile =
+    runtime.profile === 'terminal' && isStr(runtime.provider) && isProfile(runtime.provider)
+      ? runtime.provider
+      : undefined
+  const profile = isProfile(runtime.profile)
+    ? runtime.profile
+    : legacyProfile ?? (isStr(runtime.provider) && isProfile(runtime.provider) ? runtime.provider : undefined) ??
+      (runtime.transport === 'api' ? 'custom' : runtime.transport || runtime.command ? 'openclaw' : 'custom')
+  const kind = isKind(runtime.kind)
+    ? runtime.kind
+    : runtime.transport === 'api'
+      ? 'service'
+      : 'terminal'
+  const transport = isTransport(runtime.transport)
+    ? runtime.transport
+    : kind === 'terminal'
+      ? 'cli'
+      : 'api'
+
+  const parsed: AgentRuntimeBinding = {
+    kind,
+    profile,
+    transport,
+    instanceLabel: runtime.instanceLabel,
+  }
+  if (isStr(runtime.command)) parsed.command = runtime.command
+  if (isStr(runtime.vpnAlias)) parsed.vpnAlias = runtime.vpnAlias
+  if (isStr(runtime.workspaceRoot)) parsed.workspaceRoot = runtime.workspaceRoot
+
+  if (runtime.sessionPolicy && typeof runtime.sessionPolicy === 'object') {
+    const policy = runtime.sessionPolicy as Record<string, unknown>
+    parsed.sessionPolicy = {
+      maxRuntimeMs: isNum(policy.maxRuntimeMs) ? policy.maxRuntimeMs : undefined,
+      maxSteps: isNum(policy.maxSteps) ? policy.maxSteps : undefined,
+      allowNetwork: isBool(policy.allowNetwork) ? policy.allowNetwork : undefined,
+      writableRoots:
+        Array.isArray(policy.writableRoots) && policy.writableRoots.every(isStr)
+          ? policy.writableRoots
+          : undefined,
+      requiresApprovalFor:
+        Array.isArray(policy.requiresApprovalFor) && policy.requiresApprovalFor.every(isApprovalGate)
+          ? (policy.requiresApprovalFor as DewDropSessionApprovalGate[])
+          : undefined,
+    }
+  }
+
+  return parsed
+}
+
 export function buildBoardPayload(
   camera: BoardCamera,
   cards: WorkflowCard[],
   wires: BoardWire[],
 ): PersistedBoardV1 {
-  return { v: PERSIST_VERSION, camera, cards, wires }
+  const persistedCards = cards.map((card) => {
+    if (card.kind !== 'agent' || !card.agentRuntime) return card
+    const agentRuntime = { ...card.agentRuntime }
+    delete agentRuntime.sessionState
+    return {
+      ...card,
+      agentRuntime,
+    }
+  })
+  return { v: PERSIST_VERSION, camera, cards: persistedCards, wires }
 }
 
 /** Pretty JSON for downloads / sharing (same schema as localStorage). */
@@ -200,6 +521,8 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
       card.parentAgentId = w.parentAgentId as string | null
     }
     if (w.management === 'manual' || w.management === 'auto') card.management = w.management
+    const parsedAgentRuntime = parseAgentRuntime(w.agentRuntime)
+    if (parsedAgentRuntime) card.agentRuntime = parsedAgentRuntime
     if (isStr(w.mission)) card.mission = w.mission
     if (
       w.swarmTemplate === 'planning' ||
@@ -220,6 +543,19 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
     if (isStr(w.butlerRoomId)) card.butlerRoomId = w.butlerRoomId
     if (isStr(w.lastSwarmContractId)) card.lastSwarmContractId = w.lastSwarmContractId
     if (isStr(w.lastSwarmRunId)) card.lastSwarmRunId = w.lastSwarmRunId
+    if (isStr(w.capabilityProfileId)) card.capabilityProfileId = w.capabilityProfileId
+    if (isStr(w.capabilityPackId)) card.capabilityPackId = w.capabilityPackId
+    if (isStr(w.swarmRecipeId)) card.swarmRecipeId = w.swarmRecipeId
+    const parsedBriefSpec = parseBriefSpec(w.briefSpec)
+    if (parsedBriefSpec) card.briefSpec = parsedBriefSpec
+    if (isNum(w.briefVersion)) card.briefVersion = w.briefVersion
+    if (isBool(w.briefLocked)) card.briefLocked = w.briefLocked
+    if (Array.isArray(w.runLedger)) {
+      const entries = w.runLedger
+        .map((item: unknown) => parseRunLedgerEntry(item))
+        .filter((entry): entry is RunLedgerEntry => entry !== null)
+      if (entries.length > 0) card.runLedger = entries
+    }
     if (isStr(w.paperclipCompanyId)) card.paperclipCompanyId = w.paperclipCompanyId
     if (isStr(w.paperclipProjectId)) card.paperclipProjectId = w.paperclipProjectId
     if (Array.isArray(w.paperclipAgentIds) && w.paperclipAgentIds.every(isStr)) {
@@ -232,7 +568,7 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
     if (isStr(w.memoryRoom)) card.memoryRoom = w.memoryRoom
     if (isStr(w.memoryContextSummary)) card.memoryContextSummary = w.memoryContextSummary
     if (Array.isArray(w.memoryAnchors) && w.memoryAnchors.every(isStr)) {
-      card.memoryAnchors = w.memoryAnchors as string[]
+      card.memoryAnchors = (w.memoryAnchors as string[]).map(normalizeCompartmentAnchorRef)
     }
     if (Array.isArray(w.memoryPalaceLoci)) {
       const loci = w.memoryPalaceLoci
@@ -263,6 +599,19 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
         .filter((entry): entry is MemoryPalaceLocus => entry !== null)
       if (loci.length > 0) {
         card.memoryPalaceLoci = loci
+      }
+    }
+    const rawCompartmentAssets = Array.isArray(w.briefCompartmentAssets)
+      ? w.briefCompartmentAssets
+      : Array.isArray(w.roomDrawerAssets)
+        ? w.roomDrawerAssets
+        : null
+    if (rawCompartmentAssets) {
+      const assets = rawCompartmentAssets
+        .map((entry): BriefCompartmentAsset | null => parseBriefCompartmentAsset(entry))
+        .filter((entry): entry is BriefCompartmentAsset => entry !== null)
+      if (assets.length > 0) {
+        card.briefCompartmentAssets = assets
       }
     }
     if (isStr(w.phoneRelayBrief)) card.phoneRelayBrief = w.phoneRelayBrief

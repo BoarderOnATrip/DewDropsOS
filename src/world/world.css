@@ -1554,6 +1554,13 @@
   cursor: not-allowed;
 }
 
+.world-shell-room-mode-note {
+  margin: -4px 0 16px;
+  color: var(--world-shell-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .world-shell-memory-field {
   display: grid;
   gap: 16px;
@@ -1799,7 +1806,7 @@
   line-height: 1.54;
 }
 
-.world-shell-closet-drawer-list {
+.world-shell-closet-compartment-list {
   display: grid;
   gap: 8px;
   margin: 14px 0 0;
@@ -1807,7 +1814,7 @@
   list-style: none;
 }
 
-.world-shell-closet-drawer-list li {
+.world-shell-closet-compartment-list li {
   padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(171, 216, 255, 0.08);
@@ -1816,7 +1823,7 @@
   line-height: 1.45;
 }
 
-.world-shell-closet-drawer-button {
+.world-shell-closet-compartment-button {
   width: 100%;
   padding: 0;
   border: 0;
@@ -1827,11 +1834,11 @@
   cursor: pointer;
 }
 
-.world-shell-closet-drawer-button:hover {
+.world-shell-closet-compartment-button:hover {
   color: #f3f8fd;
 }
 
-.world-shell-closet-drawer-button:focus-visible,
+.world-shell-closet-compartment-button:focus-visible,
 .world-shell-stage-node:focus-visible,
 .world-shell-stage-section-item-button:focus-visible,
 .world-shell-stage-link[type='button']:focus-visible,
@@ -1867,6 +1874,17 @@
   border: 1px dashed rgba(171, 216, 255, 0.14);
   background: rgba(10, 18, 31, 0.82);
   color: #a9bfd0;
+}
+
+.world-shell-empty-copy {
+  margin: 0;
+}
+
+.world-shell-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .world-shell-projection-chip:hover,
@@ -2002,7 +2020,7 @@
     grid-column: 1 / span 5;
   }
 
-  .world-shell-palace-zone-drawer {
+  .world-shell-palace-zone-compartment {
     grid-column: 6 / span 3;
   }
 

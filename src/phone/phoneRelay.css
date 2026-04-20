@@ -225,6 +225,13 @@
   gap: 10px;
 }
 
+.phone-relay-problem-chip-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .phone-relay-problem-button p {
   margin: 10px 0 12px;
   color: #9fb8cc;

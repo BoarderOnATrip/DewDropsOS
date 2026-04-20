@@ -1,3 +1,4 @@
+import { describeAgentRuntime } from './agentRuntime'
 import { buildProblemSessionBlueprint } from './sessionBlueprint'
 import { agentsInProblemSwarm } from './swarmAgents'
 import type { BoardWire, WorkflowCard } from './types'
@@ -23,6 +24,12 @@ export function buildProblemSwarmObjective(
   const assignedAgents = agentsInProblemSwarm(problem.id, cards, wires)
   if (assignedAgents.length > 0) {
     sections.push(`Current swarm:\n- ${assignedAgents.map((agent) => agent.title).join('\n- ')}`)
+    sections.push(
+      [
+        'Worker terminals:',
+        ...assignedAgents.map((agent) => `- ${agent.title}: ${describeAgentRuntime(agent)}`),
+      ].join('\n'),
+    )
   }
 
   const blueprint = buildProblemSessionBlueprint(problem, workspaceMode)
@@ -33,6 +40,9 @@ export function buildProblemSwarmObjective(
       `- Room: ${blueprint.memoryRoom}`,
       `- Summary: ${blueprint.contextSummary}`,
       ...(blueprint.anchors.length > 0 ? [`- Anchors: ${blueprint.anchors.join(', ')}`] : []),
+      ...(blueprint.sourceMaterials.length > 0
+        ? [`- Source materials: ${blueprint.sourceMaterials.join('; ')}`]
+        : []),
       ...(blueprint.visualLoci.length > 0
         ? [`- Visual loci: ${blueprint.visualLoci.map((locus) => `${locus.title} (${locus.kind})`).join(', ')}`]
         : []),

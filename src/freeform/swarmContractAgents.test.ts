@@ -37,7 +37,7 @@ describe('buildSwarmContractAgents', () => {
     expect(result).toEqual([])
   })
 
-  it('maps three marbles to framer, builder, reviewer with DewDrops metadata', () => {
+  it('maps three marbles to on_duty, worker, review with DewDrops metadata', () => {
     const result = buildSwarmContractAgents(
       problemCard(),
       [
@@ -49,14 +49,18 @@ describe('buildSwarmContractAgents', () => {
       'Ship the slice',
     )
 
-    expect(result.map((agent) => agent.role)).toEqual(['framer', 'builder', 'reviewer'])
+    expect(result.map((agent) => agent.role)).toEqual(['on_duty', 'worker', 'review'])
     expect(result[1]?.depends_on).toEqual(['agent-a'])
     expect(result[2]?.depends_on).toEqual(['agent-b'])
     expect(result[0]?.metadata?.dewdrops_card_id).toBe('agent-a')
     expect(result[2]?.metadata?.dewdrops_card_title).toBe('Gamma')
+    expect(result[0]?.metadata?.runtime_kind).toBe('terminal')
+    expect(result[0]?.metadata?.runtime_profile).toBe('custom')
+    expect(result[0]?.metadata?.runtime_transport).toBe('cli')
+    expect(result[0]?.metadata?.session_policy_allow_network).toBe(false)
   })
 
-  it('keeps builders parallel behind the framer when more than three marbles exist', () => {
+  it('keeps workers parallel behind the on duty agent when more than three marbles exist', () => {
     const result = buildSwarmContractAgents(
       problemCard(),
       [
@@ -69,9 +73,23 @@ describe('buildSwarmContractAgents', () => {
       'Implement the thing',
     )
 
-    expect(result.map((agent) => agent.role)).toEqual(['framer', 'builder', 'builder', 'reviewer'])
+    expect(result.map((agent) => agent.role)).toEqual(['on_duty', 'worker', 'worker', 'review'])
     expect(result[1]?.depends_on).toEqual(['agent-a'])
     expect(result[2]?.depends_on).toEqual(['agent-a'])
     expect(result[3]?.depends_on).toEqual(['agent-b', 'agent-c'])
+  })
+
+  it('uses a lone worker when only one DewDrop is assigned', () => {
+    const result = buildSwarmContractAgents(
+      problemCard(),
+      [agentCard('agent-a', 'Solo', 0, 0)],
+      'build',
+      'Implement the thing',
+    )
+
+    expect(result.map((agent) => agent.role)).toEqual(['worker'])
+    expect(result[0]?.depends_on).toEqual([])
+    expect(result[0]?.objective).toContain('Duty:')
+    expect(result[0]?.objective).toContain('Session policy:')
   })
 })

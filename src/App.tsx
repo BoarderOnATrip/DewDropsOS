@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ErrorBoundary from './ErrorBoundary'
 import {
+  applyRouteToBrowser,
+  buildSurfaceRoute,
   buildRouteSearch,
   normalizeProjection,
   normalizeRoute,
@@ -24,7 +26,7 @@ import {
   updatePersistedWorkspaceSurface,
   type PersistedWorkspaceRecord,
 } from './freeform/persistBoard'
-import { hedgerowsDeltaSquadCards } from './freeform/presets/hedgerowsDeltaSquad'
+import { getPreset, PRESET_REGISTRY } from './freeform/presets/index'
 import { PhoneRelayShell, buildPhoneRelayShellData } from './phone'
 import {
   getButlerBridgeHealth,
@@ -42,12 +44,13 @@ import {
   type WorldRef,
 } from './world'
 
-function buildSeedBoard() {
-  return buildBoardPayload(
-    { x: 0, y: 0, zoom: 0.78 },
-    hedgerowsDeltaSquadCards(),
-    [],
-  )
+function buildSeedBoardFromPreset(presetId: string) {
+  const entry = getPreset(presetId) ?? PRESET_REGISTRY[0]!
+  const preset = entry.factory()
+  return {
+    name: entry.workspaceName,
+    board: buildBoardPayload({ x: 0, y: 0, zoom: 0.78 }, preset.cards, preset.wires),
+  }
 }
 
 function ensureWorkspaceExists(): PersistedWorkspaceRecord {
@@ -66,15 +69,8 @@ function ensureWorkspaceExists(): PersistedWorkspaceRecord {
     }
   }
 
-  return createPersistedWorkspace('Primary workspace', buildSeedBoard())
-}
-
-function writeRoute(route: AppRoute): void {
-  if (typeof window === 'undefined') return
-
-  const nextSearch = buildRouteSearch(route)
-  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
-  window.history.replaceState({}, '', nextUrl)
+  const { name, board } = buildSeedBoardFromPreset(PRESET_REGISTRY[0]!.id)
+  return createPersistedWorkspace(name, board)
 }
 
 export default function App() {
@@ -143,7 +139,10 @@ export default function App() {
           fallbackWorkspaceId: activeWorkspace.id,
           fallbackSurface: 'desktop',
         })
-        writeRoute(normalized)
+        if (buildRouteSearch(current) === buildRouteSearch(normalized)) {
+          return current
+        }
+        applyRouteToBrowser(normalized, 'push')
         return normalized
       })
     },
@@ -158,7 +157,7 @@ export default function App() {
     if (normalizedRoute.projectionId && activeWorkspace.lastProjection !== normalizedRoute.projectionId) {
       updatePersistedWorkspaceProjection(activeWorkspace.id, normalizedRoute.projectionId)
     }
-    writeRoute({
+    applyRouteToBrowser({
       ...normalizedRoute,
       projectionId: worldProjectionId,
     })
@@ -206,8 +205,9 @@ export default function App() {
     [commitRoute],
   )
 
-  const createWorkspaceAction = useCallback(() => {
-    const created = createPersistedWorkspace('Primary workspace', buildSeedBoard())
+  const createWorkspaceAction = useCallback((presetId: string) => {
+    const { name, board } = buildSeedBoardFromPreset(presetId)
+    const created = createPersistedWorkspace(name, board)
     commitRoute((current) => ({
       ...current,
       workspaceId: created.id,
@@ -239,7 +239,10 @@ export default function App() {
     const next = deletePersistedWorkspace(activeWorkspace.id)
     const nextWorkspace =
       (next.activeWorkspaceId ? loadPersistedWorkspace(next.activeWorkspaceId) : null) ??
-      createPersistedWorkspace('Primary workspace', buildSeedBoard())
+      (() => {
+        const { name, board } = buildSeedBoardFromPreset(PRESET_REGISTRY[0]!.id)
+        return createPersistedWorkspace(name, board)
+      })()
     commitRoute((current) => ({
       ...current,
       workspaceId: nextWorkspace.id,
@@ -267,15 +270,16 @@ export default function App() {
       if (problemId && activeWorkspace.focusedProblemId !== problemId) {
         updatePersistedWorkspaceFocus(activeWorkspace.id, problemId)
       }
-      commitRoute({
-        surface: 'phone',
-        workspaceId: activeWorkspace.id,
-        problemId: problemId ?? focusedProblemId,
-        projectionId: normalizedRoute.projectionId,
-        focusRef: normalizedRoute.focusRef,
-      })
+      commitRoute(
+        buildSurfaceRoute(normalizedRoute, {
+          surface: 'phone',
+          workspaceId: activeWorkspace.id,
+          problemId,
+          projectionId: normalizedRoute.projectionId,
+        }),
+      )
     },
-    [activeWorkspace.focusedProblemId, activeWorkspace.id, commitRoute, focusedProblemId, normalizedRoute.focusRef, normalizedRoute.projectionId],
+    [activeWorkspace.focusedProblemId, activeWorkspace.id, commitRoute, normalizedRoute],
   )
 
   const openWorldAction = useCallback(
@@ -283,29 +287,31 @@ export default function App() {
       if (problemId && activeWorkspace.focusedProblemId !== problemId) {
         updatePersistedWorkspaceFocus(activeWorkspace.id, problemId)
       }
-      commitRoute({
-        surface: 'world',
-        workspaceId: activeWorkspace.id,
-        problemId: problemId ?? focusedProblemId,
-        projectionId: normalizedRoute.projectionId,
-        focusRef: normalizedRoute.focusRef,
-      })
+      commitRoute(
+        buildSurfaceRoute(normalizedRoute, {
+          surface: 'world',
+          workspaceId: activeWorkspace.id,
+          problemId,
+          projectionId: normalizedRoute.projectionId,
+        }),
+      )
     },
-    [activeWorkspace.focusedProblemId, activeWorkspace.id, commitRoute, focusedProblemId, normalizedRoute.focusRef, normalizedRoute.projectionId],
+    [activeWorkspace.focusedProblemId, activeWorkspace.id, commitRoute, normalizedRoute],
   )
 
   const openDesktopAction = useCallback((problemId?: string | null) => {
     if (problemId && activeWorkspace.focusedProblemId !== problemId) {
       updatePersistedWorkspaceFocus(activeWorkspace.id, problemId)
     }
-    commitRoute({
-      surface: 'desktop',
-      workspaceId: activeWorkspace.id,
-      problemId: problemId ?? focusedProblemId,
-      projectionId: normalizedRoute.projectionId,
-      focusRef: normalizedRoute.focusRef,
-    })
-  }, [activeWorkspace.focusedProblemId, activeWorkspace.id, commitRoute, focusedProblemId, normalizedRoute.focusRef, normalizedRoute.projectionId])
+    commitRoute(
+      buildSurfaceRoute(normalizedRoute, {
+        surface: 'desktop',
+        workspaceId: activeWorkspace.id,
+        problemId,
+        projectionId: normalizedRoute.projectionId,
+      }),
+    )
+  }, [activeWorkspace.focusedProblemId, activeWorkspace.id, commitRoute, normalizedRoute])
 
   const phoneShellData = useMemo(
     () =>
@@ -472,6 +478,7 @@ export default function App() {
           onFocusedProblemChange={focusProblemAction}
           onWorkspaceChange={selectWorkspace}
           onCreateWorkspace={createWorkspaceAction}
+          workspacePresets={PRESET_REGISTRY}
           onDuplicateWorkspace={duplicateWorkspaceAction}
           onRenameWorkspace={renameWorkspaceAction}
           onDeleteWorkspace={deleteWorkspaceAction}

@@ -3,7 +3,7 @@ export type RoomPalaceZoneId =
   | 'table'
   | 'wall'
   | 'shelf'
-  | 'drawer'
+  | 'compartment'
   | 'window'
   | 'floor'
   | 'console'
@@ -75,7 +75,7 @@ const ZONE_ORDER: readonly RoomPalaceZoneId[] = [
   'table',
   'wall',
   'shelf',
-  'drawer',
+  'compartment',
   'window',
   'floor',
   'console',
@@ -86,7 +86,7 @@ const ZONE_LABELS: Record<RoomPalaceZoneId, string> = {
   table: 'Table',
   wall: 'Wall',
   shelf: 'Shelf',
-  drawer: 'Drawer',
+  compartment: 'Compartment',
   window: 'Window',
   floor: 'Floor',
   console: 'Console',
@@ -97,7 +97,7 @@ const ZONE_EMPTY_LABELS: Record<RoomPalaceZoneId, string> = {
   table: 'No actors anchored yet',
   wall: 'No anchors or tunnels yet',
   shelf: 'No artifacts placed yet',
-  drawer: 'No questions folded away',
+  compartment: 'No questions folded away',
   window: 'No briefs facing outward',
   floor: 'No loci staged yet',
   console: 'No run recorded yet',
@@ -139,7 +139,7 @@ function zoneSummary(
       return counts.artifacts > 0
         ? `${pluralize(counts.artifacts, 'artifact')} stored here.`
         : 'Artifacts and durable evidence live here.'
-    case 'drawer':
+    case 'compartment':
       return counts.openQuestions > 0
         ? `${pluralize(counts.openQuestions, 'open question')} folded away.`
         : 'Folded questions and deferred context live here.'
@@ -288,7 +288,7 @@ function buildZone(
         emptyLabel: ZONE_EMPTY_LABELS[zoneId],
         items: buildCappedItems(zoneId, 'artifact', input.artifacts),
       }
-    case 'drawer':
+    case 'compartment':
       return {
         id: zoneId,
         label: ZONE_LABELS[zoneId],

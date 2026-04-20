@@ -71,7 +71,7 @@ export type Organization = BaseNode & {
   memberActorIds: string[]
 }
 
-export type AgentProvider = 'codex' | 'claude' | 'grok' | 'paperclip' | 'custom'
+export type AgentProvider = 'codex' | 'claude' | 'claude-code' | 'grok' | 'openclaw' | 'paperclip' | 'custom'
 
 export type Agent = BaseNode & {
   kind: 'agent'
@@ -98,7 +98,7 @@ export type LocusKind =
   | 'door'
   | 'table'
   | 'wall'
-  | 'drawer'
+  | 'compartment'
   | 'window'
   | 'floor'
   | 'console'

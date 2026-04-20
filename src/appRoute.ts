@@ -10,6 +10,8 @@ export type AppRoute = {
   focusRef: WorldRef | null
 }
 
+export type RouteWriteMode = 'push' | 'replace'
+
 type RouteOptions = {
   fallbackWorkspaceId: string
   fallbackSurface?: AppSurface
@@ -105,6 +107,32 @@ export function normalizeRoute(
   }
 }
 
+export function buildSurfaceRoute(
+  route: AppRoute,
+  overrides: {
+    surface: AppSurface
+    workspaceId: string
+    problemId?: string | null
+    projectionId?: ProjectionMode | null
+  },
+): AppRoute {
+  const nextProblemId = overrides.problemId ?? route.problemId
+  const nextProjectionId = overrides.projectionId ?? route.projectionId
+  return normalizeRoute(
+    {
+      surface: overrides.surface,
+      workspaceId: overrides.workspaceId,
+      problemId: nextProblemId,
+      projectionId: nextProjectionId,
+      focusRef: overrides.problemId ? { kind: 'room', id: overrides.problemId } : null,
+    },
+    {
+      fallbackWorkspaceId: overrides.workspaceId,
+      fallbackSurface: overrides.surface,
+    },
+  )
+}
+
 export function readRoute(
   search: string,
   options: RouteOptions,
@@ -142,4 +170,24 @@ export function buildRouteSearch(route: AppRoute): string {
     params.set('focusId', route.focusRef.id)
   }
   return params.toString()
+}
+
+export function applyRouteToBrowser(route: AppRoute, mode: RouteWriteMode = 'replace'): void {
+  if (typeof window === 'undefined') return
+
+  const nextSearch = buildRouteSearch(route)
+  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
+  const state = {
+    surface: route.surface,
+    workspaceId: route.workspaceId,
+    problemId: route.problemId,
+    projectionId: route.projectionId,
+    focusKind: route.focusRef?.kind ?? null,
+    focusId: route.focusRef?.id ?? null,
+  }
+  if (mode === 'push') {
+    window.history.pushState(state, '', nextUrl)
+    return
+  }
+  window.history.replaceState(state, '', nextUrl)
 }

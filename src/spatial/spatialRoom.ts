@@ -7,7 +7,7 @@ export type SpatialRoomZoneId =
   | 'table'
   | 'wall'
   | 'shelf'
-  | 'drawer'
+  | 'compartment'
   | 'window'
   | 'floor'
   | 'console'
@@ -80,8 +80,8 @@ function zoneNodeMeta(zoneId: RoomPalaceZoneId): { kind: SpatialRoomNodeKind; ti
       return { kind: 'wall', title: 'People Wall' }
     case 'shelf':
       return { kind: 'shelf', title: 'Evidence Desk' }
-    case 'drawer':
-      return { kind: 'cabinet', title: 'Drawer' }
+    case 'compartment':
+      return { kind: 'cabinet', title: 'Compartment' }
     case 'window':
       return { kind: 'window', title: 'Future Window' }
     case 'floor':
@@ -149,11 +149,11 @@ export function buildSpatialRoomScene(input: SpatialRoomSceneInput): SpatialRoom
       id: 'room-portal',
       zoneId: 'portal',
       kind: 'portal',
-      title: tunnelTotal > 0 ? 'Portal arch' : 'Portal stub',
+      title: tunnelTotal > 0 ? 'Portal arch' : 'Portal opening',
       summary:
         tunnelTotal > 0
           ? `${tunnelTotal} adjacent room${tunnelTotal === 1 ? '' : 's'} can open from this office.`
-          : 'Pin a tunnel to let the office open into another room, castle, or kingdom.',
+          : 'Add a tunnel to let the office open into another room, castle, or kingdom.',
       tone: tunnelTotal > 0 ? 'ready' : 'calm',
     },
   ]

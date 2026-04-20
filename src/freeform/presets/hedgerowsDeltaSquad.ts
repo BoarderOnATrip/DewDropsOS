@@ -1,3 +1,4 @@
+import { defaultTerminalRuntime } from '../agentRuntime'
 import type { WorkflowCard } from '../types'
 
 const HEDW_PROBLEM_ID = 'hedw-problem'
@@ -24,6 +25,7 @@ function agent(
     kind: 'agent',
     assignedToProblemId: null,
     management,
+    agentRuntime: defaultTerminalRuntime(id, title),
   }
 }
 
@@ -51,7 +53,7 @@ export function hedgerowsDeltaSquadCards(): WorkflowCard[] {
       memoryContextSummary:
         'Cross-device execution room for taking Hedgerows 2.0 from concept into a real, testable product and pilot pipeline.',
       memoryAnchors: [
-        'drawer/hedgerows/market-map',
+        'compartment/hedgerows/market-map',
         'entity/hedgerows/pilot-sites',
         'room/paired-phone-relay',
       ],
@@ -70,9 +72,9 @@ export function hedgerowsDeltaSquadCards(): WorkflowCard[] {
         },
         {
           id: 'hedw-market-map',
-          title: 'Market Map Drawer',
+          title: 'Market Map Compartment',
           kind: 'artifact',
-          detail: 'drawer/hedgerows/market-map',
+          detail: 'compartment/hedgerows/market-map',
         },
         {
           id: 'hedw-phone-relay',

@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  applyRouteToBrowser,
   buildRouteSearch,
+  buildSurfaceRoute,
   normalizeFocusKind,
   normalizeFocusRef,
   normalizeProjection,
@@ -63,6 +65,33 @@ describe('appRoute helpers', () => {
     })
   })
 
+  it('builds surface routes without carrying stale focus refs across transitions', () => {
+    const route = normalizeRoute(
+      {
+        surface: 'world',
+        workspaceId: 'workspace-a',
+        problemId: 'room-1',
+        projectionId: 'fold',
+        focusKind: 'locus',
+        focusId: 'room-1-locus',
+      },
+      { fallbackWorkspaceId: 'workspace-a' },
+    )
+    const next = buildSurfaceRoute(route, {
+      surface: 'phone',
+      workspaceId: 'workspace-a',
+    })
+    expect(next.problemId).toBe('room-1')
+    expect(next.focusRef).toBeNull()
+    const direct = buildSurfaceRoute(route, {
+      surface: 'desktop',
+      workspaceId: 'workspace-a',
+      problemId: 'room-2',
+    })
+    expect(direct.problemId).toBe('room-2')
+    expect(direct.focusRef).toEqual({ kind: 'room', id: 'room-2' })
+  })
+
   it('omits the desktop surface from serialized URLs and keeps world/phone explicit', () => {
     expect(
       buildRouteSearch({
@@ -98,5 +127,31 @@ describe('appRoute helpers', () => {
     ).toBe(
       'surface=phone&workspace=alpha&problem=room-1&projection=packet&focusKind=locus&focusId=room-1-locus',
     )
+  })
+
+  it('writes push history entries for user navigation and replace entries for sync', () => {
+    const pushSpy = vi.spyOn(window.history, 'pushState').mockImplementation(() => {})
+    const replaceSpy = vi.spyOn(window.history, 'replaceState').mockImplementation(() => {})
+    const route = normalizeRoute(
+      {
+        surface: 'world',
+        workspaceId: 'alpha',
+        problemId: 'room-1',
+        projectionId: 'fold',
+        focusRef: { kind: 'room', id: 'room-1' },
+      },
+      { fallbackWorkspaceId: 'alpha' },
+    )
+
+    applyRouteToBrowser(route, 'push')
+    expect(pushSpy).toHaveBeenCalledTimes(1)
+    expect(pushSpy.mock.calls[0]?.[2]).toContain('?surface=world&workspace=alpha&problem=room-1&projection=fold&focusKind=room&focusId=room-1')
+
+    applyRouteToBrowser(route, 'replace')
+    expect(replaceSpy).toHaveBeenCalledTimes(1)
+    expect(replaceSpy.mock.calls[0]?.[2]).toContain('?surface=world&workspace=alpha&problem=room-1&projection=fold&focusKind=room&focusId=room-1')
+
+    pushSpy.mockRestore()
+    replaceSpy.mockRestore()
   })
 })

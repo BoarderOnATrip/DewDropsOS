@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { buildMediaRuntimeBlueprint } from '../lib/mediaRuntime'
 import { RoomAssetStudio } from '../spatial/RoomAssetStudio'
 import { buildRoomAssetFromSpatialContext } from '../spatial/roomAsset'
@@ -156,12 +156,12 @@ export type WorldClosetCard = {
   title: string
   summary: string
   sourceLabel: string
-  drawers: WorldClosetDrawer[]
+  compartments: WorldClosetCompartment[]
   tone?: WorldProjectionTone
   accent?: string
 }
 
-export type WorldClosetDrawer = {
+export type WorldClosetCompartment = {
   id: string
   label: string
   focusRef?: WorldRef
@@ -433,10 +433,10 @@ const roomPalaceZoneMeta: Record<
     copy: 'Artifacts, notes, and durable proof.',
     area: 'shelf',
   },
-  drawer: {
-    title: 'Drawer',
+  compartment: {
+    title: 'Compartment',
     copy: 'Folded questions and deferred details.',
-    area: 'drawer',
+    area: 'compartment',
   },
   window: {
     title: 'Future Window',
@@ -547,6 +547,7 @@ export function WorldShell({
   )
   const [roomDetailMode, setRoomDetailMode] = useState<'studio' | 'palace' | 'closets'>('studio')
   const [isArrivalVisible, setIsArrivalVisible] = useState(arrivalMode !== 'never')
+  const arrivalTimeoutRef = useRef<number | null>(null)
 
   const stageCards = drillStages.length
     ? drillStages
@@ -956,6 +957,7 @@ export function WorldShell({
   const hasStudioMode = !!roomAssetStudioAsset
   const hasPalaceMode = !!roomPalace
   const hasClosetMode = closetCards.length > 0
+  const hasRoomModeGap = !hasClosetMode
   const currentRoomDetailMode =
     roomDetailMode === 'studio' && hasStudioMode
       ? 'studio'
@@ -1072,7 +1074,7 @@ export function WorldShell({
     if (zoneId === 'shelf') {
       return roomPreview?.artifactItems?.[0]
     }
-    if (zoneId === 'drawer') {
+    if (zoneId === 'compartment') {
       return roomPreview?.openQuestionItems?.[0]
     }
     if (zoneId === 'window') {
@@ -1088,20 +1090,31 @@ export function WorldShell({
   }
 
   useEffect(() => {
-    if (arrivalMode === 'never') return
+    if (arrivalMode === 'never' || !isArrivalVisible) {
+      return
+    }
+    if (arrivalTimeoutRef.current !== null) return
 
-    const revealId = window.setTimeout(() => {
-      setIsArrivalVisible(true)
-    }, 0)
-    const timeoutId = window.setTimeout(() => {
+    arrivalTimeoutRef.current = window.setTimeout(() => {
+      arrivalTimeoutRef.current = null
       setIsArrivalVisible(false)
     }, arrivalDurationMs)
 
     return () => {
-      window.clearTimeout(revealId)
-      window.clearTimeout(timeoutId)
+      if (arrivalTimeoutRef.current !== null) {
+        window.clearTimeout(arrivalTimeoutRef.current)
+        arrivalTimeoutRef.current = null
+      }
     }
-  }, [arrivalDurationMs, arrivalMode, title])
+  }, [arrivalDurationMs, arrivalMode, isArrivalVisible])
+
+  function dismissArrival() {
+    if (arrivalTimeoutRef.current !== null) {
+      window.clearTimeout(arrivalTimeoutRef.current)
+      arrivalTimeoutRef.current = null
+    }
+    setIsArrivalVisible(false)
+  }
 
   return (
     <main className={`world-shell${className ? ` ${className}` : ''}`}>
@@ -1159,7 +1172,7 @@ export function WorldShell({
             <button
               type="button"
               className="world-shell-app-button"
-              onClick={() => setIsArrivalVisible(false)}
+              onClick={dismissArrival}
             >
               Enter context now
             </button>
@@ -1549,7 +1562,32 @@ export function WorldShell({
               ) : null}
             </div>
           ) : (
-            <div className="world-shell-empty">No projections yet. Add 3D, fold, outline, or packet views.</div>
+            <div className="world-shell-empty">
+              <p className="world-shell-empty-copy">
+                No projections yet. Open the current room or select a room card to unfold 3D, fold,
+                outline, or packet views.
+              </p>
+              <div className="world-shell-empty-actions">
+                {onOpenDesktop ? (
+                  <button
+                    type="button"
+                    className="world-shell-app-button is-primary"
+                    onClick={() => onOpenDesktop(currentRoomId)}
+                  >
+                    Open desktop room
+                  </button>
+                ) : null}
+                {onOpenPhoneRelay ? (
+                  <button
+                    type="button"
+                    className="world-shell-app-button"
+                    onClick={() => onOpenPhoneRelay(currentRoomId)}
+                  >
+                    Open phone relay
+                  </button>
+                ) : null}
+              </div>
+            </div>
           )}
         </div>
       </section>
@@ -1596,7 +1634,32 @@ export function WorldShell({
             })}
           </div>
         ) : (
-          <div className="world-shell-empty">No rooms yet. Create one to anchor a new context tunnel.</div>
+          <div className="world-shell-empty">
+            <p className="world-shell-empty-copy">
+              No rooms yet. Create one to anchor a new context tunnel, or open the desktop room to
+              keep working from the current context.
+            </p>
+            <div className="world-shell-empty-actions">
+              {onOpenDesktop ? (
+                <button
+                  type="button"
+                  className="world-shell-app-button is-primary"
+                  onClick={() => onOpenDesktop(currentRoomId)}
+                >
+                  Open desktop room
+                </button>
+              ) : null}
+              {onOpenPhoneRelay ? (
+                <button
+                  type="button"
+                  className="world-shell-app-button"
+                  onClick={() => onOpenPhoneRelay(currentRoomId)}
+                >
+                  Open phone relay
+                </button>
+              ) : null}
+            </div>
+          </div>
         )}
       </section>
 
@@ -1753,6 +1816,7 @@ export function WorldShell({
               onClick={() => setRoomDetailMode('studio')}
               aria-pressed={currentRoomDetailMode === 'studio'}
               disabled={!hasStudioMode}
+              title={hasStudioMode ? undefined : 'Studio is unavailable until the room has a captured asset.'}
             >
               Studio
             </button>
@@ -1762,6 +1826,7 @@ export function WorldShell({
               onClick={() => setRoomDetailMode('palace')}
               aria-pressed={currentRoomDetailMode === 'palace'}
               disabled={!hasPalaceMode}
+              title={hasPalaceMode ? undefined : 'Palace is unavailable until the room preview is ready.'}
             >
               Palace
             </button>
@@ -1771,10 +1836,17 @@ export function WorldShell({
               onClick={() => setRoomDetailMode('closets')}
               aria-pressed={currentRoomDetailMode === 'closets'}
               disabled={!hasClosetMode}
+              title={hasClosetMode ? undefined : 'Closets unlock after you add at least one closet card.'}
             >
               Closets
             </button>
           </div>
+          {hasRoomModeGap ? (
+            <p className="world-shell-room-mode-note">
+              Closets are still sealed. Add a closet card to open that view; Studio and Palace stay
+              available because this room already has a live preview.
+            </p>
+          ) : null}
 
           {currentRoomDetailMode === 'studio' && roomAssetStudioAsset ? (
             <div className="world-shell-room-asset-studio">
@@ -1826,8 +1898,13 @@ export function WorldShell({
                     ) : null}
                   </div>
                   <div className="world-shell-palace-checkpoint-copy">
-                    <p>Phone: {roomPreview.phoneBrief ?? 'No phone brief yet.'}</p>
-                    <p>Desktop: {roomPreview.desktopBrief ?? 'No desktop brief yet.'}</p>
+                    <p>
+                      Phone: {roomPreview.phoneBrief ?? 'Add a phone brief to make the room portable.'}
+                    </p>
+                    <p>
+                      Desktop:{' '}
+                      {roomPreview.desktopBrief ?? 'Add a desktop brief for deeper work and editing.'}
+                    </p>
                   </div>
                 </article>
 
@@ -1866,7 +1943,7 @@ export function WorldShell({
             <div className="world-shell-closet-layout">
               {closetCards.length > 0 ? (
                 <>
-                  <div className="world-shell-closet-rail" aria-label="Closets and drawers">
+                  <div className="world-shell-closet-rail" aria-label="Closets and compartments">
                     {closetCards.map((closet) => {
                       const selected = closet.id === currentClosetId
                       const accentStyle = closet.accent
@@ -1891,7 +1968,7 @@ export function WorldShell({
                           </div>
                           <p>{closet.summary}</p>
                           <div className="world-shell-room-meta">
-                            <span>{closet.drawers.length} drawers</span>
+                            <span>{closet.compartments.length} compartments</span>
                           </div>
                         </button>
                       )
@@ -1902,42 +1979,42 @@ export function WorldShell({
                     <article className="world-shell-closet-preview">
                       <div className="world-shell-closet-preview-head">
                         <div>
-                          <p className="world-shell-section-label">Drawer preview</p>
+                          <p className="world-shell-section-label">Compartment preview</p>
                           <h3>{selectedCloset.title}</h3>
                         </div>
                         <span className="world-shell-chip">{selectedCloset.sourceLabel}</span>
                       </div>
                       <p>{selectedCloset.summary}</p>
-                      {selectedCloset.drawers.length > 0 ? (
-                        <ul className="world-shell-closet-drawer-list">
-                          {selectedCloset.drawers.map((drawer) => (
-                            <li key={drawer.id}>
+                      {selectedCloset.compartments.length > 0 ? (
+                        <ul className="world-shell-closet-compartment-list">
+                          {selectedCloset.compartments.map((compartment) => (
+                            <li key={compartment.id}>
                               {(() => {
-                                const focusRef = drawer.focusRef
+                                const focusRef = compartment.focusRef
                                 if (focusRef && onFocusRefSelect) {
                                   return (
                                     <button
                                       type="button"
-                                      className="world-shell-closet-drawer-button"
+                                      className="world-shell-closet-compartment-button"
                                       onClick={() => onFocusRefSelect(focusRef)}
                                     >
-                                      {drawer.label}
+                                      {compartment.label}
                                     </button>
                                   )
                                 }
-                                return <span>{drawer.label}</span>
+                                return <span>{compartment.label}</span>
                               })()}
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <div className="world-shell-empty">No drawers in this closet yet.</div>
+                        <div className="world-shell-empty">No compartments in this closet yet.</div>
                       )}
                     </article>
                   ) : null}
                 </>
               ) : (
-                <div className="world-shell-empty">No closets or drawers mapped for this room yet.</div>
+                <div className="world-shell-empty">No closets or compartments mapped for this room yet.</div>
               )}
             </div>
           ) : null}
