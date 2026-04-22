@@ -15,7 +15,7 @@ function problem(overrides: Partial<WorkflowCard> = {}): WorkflowCard {
     y: 0,
     width: 280,
     height: 180,
-    mission: 'Ship the next DewDrops slice.',
+    mission: 'Ship the next DewDrops Swarm OS slice.',
     memoryContextSummary: 'Keep launch context and operator intent visible.',
     preferredLaunchSurface: 'hybrid',
     openQuestions: [],

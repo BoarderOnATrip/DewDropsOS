@@ -60,7 +60,7 @@ describe('PhoneRelayShell', () => {
     const onFocusProblem = vi.fn()
 
     const data = buildPhoneRelayShellData({
-      workspaceName: 'DewDrops',
+      workspaceName: 'DewDrops Swarm OS',
       workspaceSubtitle: 'Phone relay workspace snapshot',
       workspaceMode: 'phone',
       workspaceId: 'relay-1',
@@ -124,7 +124,7 @@ describe('PhoneRelayShell', () => {
     render(
       <PhoneRelayShell
         {...buildPhoneRelayShellData({
-          workspaceName: 'DewDrops',
+          workspaceName: 'DewDrops Swarm OS',
           cards: [],
         })}
       />,
@@ -138,7 +138,7 @@ describe('PhoneRelayShell', () => {
     render(
       <PhoneRelayShell
         {...buildPhoneRelayShellData({
-          workspaceName: 'DewDrops',
+          workspaceName: 'DewDrops Swarm OS',
           workspaceMode: 'phone',
           selectedProblemId: 'p2',
           bridgeHealth: { ok: true },

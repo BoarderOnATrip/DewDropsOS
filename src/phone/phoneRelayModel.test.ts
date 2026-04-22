@@ -59,7 +59,7 @@ describe('phoneRelayModel', () => {
 
   it('builds a phone-ready view model with readiness and latest run context', () => {
     const view = buildPhoneRelayWorkspaceView({
-      workspaceName: 'DewDrops',
+      workspaceName: 'DewDrops Swarm OS',
       workspaceSubtitle: 'Phone relay workspace snapshot',
       workspaceMode: 'phone',
       bridgeHealth: { ok: true },

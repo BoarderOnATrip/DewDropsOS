@@ -1,11 +1,11 @@
-# DewDrops Development Roadmap
+# DewDrops Swarm OS Development Roadmap
 
 ## North Star
 
-DewDrops becomes the control plane for real swarms.
+DewDrops Swarm OS becomes the control plane for real swarms.
 
 The briefcase defines the problem.
-The DewDrops route live workers.
+The DewDrops Swarm OS board routes live workers.
 Workers operate across local machines, remote hosts, and browser environments.
 The human stays in charge of intent, approvals, and review rather than micromanaging execution.
 

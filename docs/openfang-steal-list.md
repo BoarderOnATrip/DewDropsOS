@@ -1,5 +1,5 @@
 # OpenFang Steal List
-## What To Borrow For DewDrops + Paperclip
+## What To Borrow For DewDrops Swarm OS + Paperclip
 
 Date: 2026-04-18
 Reference repo: `RightNow-AI/openfang` @ `d3d9fa8`

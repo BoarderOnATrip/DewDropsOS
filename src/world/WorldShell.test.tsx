@@ -102,7 +102,7 @@ describe('WorldShell', () => {
 
     const { rerender } = render(
       <WorldShell
-        title="DewDrops"
+        title="DewDrops Swarm OS"
         hierarchy={{
           earth: 'Planetary memory',
           wing: 'Revenue wing',
@@ -132,7 +132,7 @@ describe('WorldShell', () => {
 
     rerender(
       <WorldShell
-        title="DewDrops, reloaded"
+        title="DewDrops Swarm OS, reloaded"
         hierarchy={{
           earth: 'Planetary memory',
           wing: 'Revenue wing',
@@ -162,7 +162,7 @@ describe('WorldShell', () => {
 
     render(
       <WorldShell
-        title="DewDrops"
+        title="DewDrops Swarm OS"
         arrivalMode="never"
         hierarchy={{
           earth: 'Planetary memory',
@@ -200,7 +200,7 @@ describe('WorldShell', () => {
 
     render(
       <WorldShell
-        title="DewDrops"
+        title="DewDrops Swarm OS"
         subtitle="Spatial operating surface"
         arrivalMode="never"
         heroCopy="The world remembers where you left off and opens back into context."
@@ -410,7 +410,7 @@ describe('WorldShell', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'DewDrops' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'DewDrops Swarm OS' })).toBeInTheDocument()
     expect(screen.getByText('Spatial operating surface')).toBeInTheDocument()
     expect(screen.getByText('Earth return')).toBeInTheDocument()
     expect(screen.getByText('Magnetic room return')).toBeInTheDocument()
@@ -490,7 +490,7 @@ describe('WorldShell', () => {
 
       return (
         <WorldShell
-          title="DewDrops"
+          title="DewDrops Swarm OS"
           arrivalMode="never"
           hierarchy={{
             earth: 'Planetary memory',

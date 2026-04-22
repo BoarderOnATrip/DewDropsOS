@@ -1,6 +1,6 @@
 ## Experiments
 
-This directory holds non-shipping DewDrops experiments and dormant integration sketches.
+This directory holds non-shipping DewDrops Swarm OS experiments and dormant integration sketches.
 
 Current contents:
 

@@ -149,7 +149,7 @@ describe('paperclipBridge requests', () => {
     await expect(
       upsertPaperclipIssueDocument(settings, 'issue-1', {
         key: 'plan',
-        title: 'DewDrops launch packet',
+        title: 'DewDrops Swarm OS launch packet',
         body: '# Plan',
       }),
     ).resolves.toEqual(expect.objectContaining({

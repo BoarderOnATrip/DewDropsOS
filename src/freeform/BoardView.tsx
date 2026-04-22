@@ -1318,7 +1318,7 @@ export default function BoardView({
         }
         const parsed = parseBoardJsonString(text)
         if (!parsed) {
-          setBoardNotice({ text: 'Not a valid DewDrops board file (expected v1 JSON)', tone: 'error' })
+          setBoardNotice({ text: 'Not a valid DewDrops Swarm OS board file (expected v1 JSON)', tone: 'error' })
           return
         }
         applyImportedBoard(parsed)
@@ -2691,7 +2691,7 @@ export default function BoardView({
 
       await upsertPaperclipIssueDocument(paperclipSettings, issue.id, {
         key: 'plan',
-        title: 'DewDrops launch packet',
+        title: 'DewDrops Swarm OS launch packet',
         body: selectedProblemLaunchBrief || launchObjective.trim(),
       })
 
@@ -2700,7 +2700,7 @@ export default function BoardView({
           paperclipSettings,
           issue.id,
           [
-            `${mentionTokens.join(' ')} DewDrops launched this room into Paperclip.`,
+            `${mentionTokens.join(' ')} DewDrops Swarm OS launched this room into Paperclip.`,
             '',
             `Issue: ${issue.identifier ?? issue.id}`,
             '',
@@ -2778,7 +2778,7 @@ export default function BoardView({
       })
 
       setBoardNotice({
-        text: `Marked ${workProduct.title} as ${status} in DewDrops and Paperclip.`,
+        text: `Marked ${workProduct.title} as ${status} in DewDrops Swarm OS and Paperclip.`,
         tone: 'ok',
       })
     },
@@ -3129,7 +3129,7 @@ export default function BoardView({
     <div className={`freeform-root freeform-root--${workspaceMode}`}>
       <header className="freeform-toolbar freeform-toolbar--minimal">
         <div className="freeform-toolbar-meta">
-          <h1>DewDrops</h1>
+          <h1>DewDrops Swarm OS</h1>
           <p>
             {workspaceName ? `${workspaceName} • ` : ''}
             Spin up `Terminal`, `Hermes`, `Browser`, `Playwright`, or `Local model` nodes instantly. Shortcuts: `T`, `H`, `B`, `P`, `L`. Double-click empty space still drops a terminal.
@@ -3315,7 +3315,7 @@ export default function BoardView({
           <button
             type="button"
             className="freeform-btn freeform-btn--tool"
-            title="Load a board from a DewDrops JSON file"
+            title="Load a board from a DewDrops Swarm OS JSON file"
             onClick={() => importFileRef.current?.click()}
           >
             Import
@@ -3458,7 +3458,7 @@ export default function BoardView({
                   <div className="freeform-toolbar-panel-problem">
                     <div>
                       <h3>Paperclip control plane</h3>
-                      <p>Create a Paperclip issue, write the DewDrops packet into the plan doc, and wake the selected agents.</p>
+                      <p>Create a Paperclip issue, write the DewDrops Swarm OS packet into the plan doc, and wake the selected agents.</p>
                     </div>
                     <span className={`freeform-run-pill${paperclipOnline ? ' is-online' : ' is-offline'}`}>
                       {paperclipBusy ? 'syncing' : paperclipOnline ? 'online' : 'offline'}
@@ -3667,7 +3667,7 @@ export default function BoardView({
                   </div>
 
                   <p className="freeform-toolbar-panel-hint">
-                    Paperclip is the local swarm control plane here. DewDrops creates the issue, writes the plan, then wakes the selected Paperclip agents.
+                    Paperclip is the local swarm control plane here. DewDrops Swarm OS creates the issue, writes the plan, then wakes the selected Paperclip agents.
                   </p>
                   {selectedProblem?.lastPaperclipIssueId ? (
                     <p className="freeform-toolbar-panel-hint">

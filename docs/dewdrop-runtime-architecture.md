@@ -1,4 +1,4 @@
-# DewDrop Runtime Architecture
+# DewDrops Swarm OS Runtime Architecture
 
 ## Goal
 

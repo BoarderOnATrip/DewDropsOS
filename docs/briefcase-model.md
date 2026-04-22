@@ -2,7 +2,7 @@
 
 ## Core Shape
 
-DewDrops should present the same intake shape regardless of domain.
+DewDrops Swarm OS should present the same intake shape regardless of domain.
 
 The stable operator-facing flow is:
 
@@ -124,4 +124,3 @@ Named checkpoints where human approval is required before continuing or publishi
 Use `Brief` and `Compartments` in user-facing language.
 
 Internal implementation names like `briefCompartmentAssets` can remain temporarily if they reduce churn, but the product should speak in the briefcase vocabulary.
-

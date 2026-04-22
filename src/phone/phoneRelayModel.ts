@@ -374,7 +374,7 @@ export function buildPhoneRelayWorkspaceView(
   const activeRunCount = (snapshot.runs ?? []).filter((run) => swarmRunIsActive(run.status)).length
 
   return {
-    workspaceName: snapshot.workspaceName?.trim() || 'DewDrops',
+    workspaceName: snapshot.workspaceName?.trim() || 'DewDrops Swarm OS',
     workspaceSubtitle: snapshot.workspaceSubtitle?.trim() || 'Phone relay workspace snapshot',
     workspaceMode,
     workspaceProjectionLabel:

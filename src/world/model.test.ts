@@ -47,7 +47,7 @@ describe('world ontology', () => {
     expect(projection.kind).toBe('projection')
     expect(projection.mode).toBe('room')
     expect(projection.title).toBe('Launch Deck')
-    expect(projection.breadcrumb).toEqual(['DewDrops World', 'Work-Goals', 'Launch Deck'])
+    expect(projection.breadcrumb).toEqual(['DewDrops Swarm OS World', 'Work-Goals', 'Launch Deck'])
     expect(projection.cards.map((card) => card.id)).toEqual(
       expect.arrayContaining([
         'room-launch-deck',

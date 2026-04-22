@@ -1,9 +1,9 @@
-# World OS for DewDrops
+# World OS for DewDrops Swarm OS
 
 ## Purpose
-DewDrops is not a generic app shell. It is an agentic engineering harness and the first product surface for a `World OS`: a spatial operating system where context stays attached to the people, places, things, and work that matter.
+DewDrops Swarm OS is not a generic app shell. It is an agentic engineering harness and the first product surface for a `World OS`: a spatial operating system where context stays attached to the people, places, things, and work that matter.
 
-The product goal is to evolve DewDrops from a CRM into a persistent context environment for super-users, operators, and agents. The UI should feel like moving through rooms in a world, not browsing folders in a tree.
+The product goal is to evolve DewDrops Swarm OS from a CRM into a persistent context environment for super-users, operators, and agents. The UI should feel like moving through rooms in a world, not browsing folders in a tree.
 
 ## Product Principles
 - Rooms instead of folders.
