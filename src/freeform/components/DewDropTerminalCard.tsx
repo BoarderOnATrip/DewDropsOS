@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import {
   DEWDROP_RUNTIME_PROFILE_OPTIONS,
   defaultCommandForRuntimeProfile,
+  defaultModelTagForRuntimeProfile,
   pickerRuntimeProfile,
   runtimeProfileLabel,
 } from '../agentRuntime'
@@ -77,15 +78,22 @@ export function DewDropTerminalCard({
   const shellCommand = runtime?.command ?? 'zsh -i -f'
   const workspaceRoot = runtime?.workspaceRoot ?? '.'
   const hostAlias = runtime?.vpnAlias ?? ''
+  const modelTag = runtime?.modelTag ?? defaultModelTagForRuntimeProfile(runtimeProfile) ?? ''
   const sessionId = runtime?.sessionState?.sessionId ?? null
   const routeLabel = dewDropRouteLabel(runtime)
   const bootstrapPlan = buildDewDropBootstrapPlan(runtime)
   const hostStatus = hostStatusOverride ?? describeDewDropHostStatus(runtime)
   const hostRecord = getDewDropHost(hostAlias)
   const hostSuggestions = listDewDropHostSuggestions(runtime)
+  const quickHostSuggestions = runtimeProfile === 'ollama' ? hostSuggestions.slice(0, 2) : []
   const hostListId = `${agent.id}-host-suggestions`
   const hostInputId = `${agent.id}-host`
+  const modelInputId = `${agent.id}-model-tag`
   const bootstrapText = bootstrapPlan?.commands.join('\n') ?? ''
+  const shouldAdoptHostRoot =
+    !runtime?.workspaceRoot ||
+    runtime.workspaceRoot === '.' ||
+    (!!hostRecord?.defaultWorkspaceRoot && runtime.workspaceRoot === hostRecord.defaultWorkspaceRoot)
 
   useEffect(() => {
     if (!autoFocusInput || !canSendInput || !sessionId) return
@@ -121,9 +129,11 @@ export function DewDropTerminalCard({
             value={runtimeProfile}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => {
               const profile = event.target.value as typeof runtimeProfile
+              const nextModelTag = defaultModelTagForRuntimeProfile(profile)
               onRuntimeChange(agent.id, {
                 profile,
-                command: defaultCommandForRuntimeProfile(profile),
+                modelTag: nextModelTag,
+                command: defaultCommandForRuntimeProfile(profile, { modelTag: nextModelTag }),
               })
             }}
           >
@@ -145,6 +155,21 @@ export function DewDropTerminalCard({
             placeholder="zsh -i -f"
           />
         </label>
+        {runtimeProfile === 'ollama' ? (
+          <label className="freeform-field" htmlFor={modelInputId}>
+            <span>Model</span>
+            <input
+              id={modelInputId}
+              aria-label="Model"
+              type="text"
+              value={modelTag}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                onRuntimeChange(agent.id, { modelTag: event.target.value })
+              }
+              placeholder={defaultModelTagForRuntimeProfile('ollama')}
+            />
+          </label>
+        ) : null}
         <label className="freeform-field">
           <span>Root</span>
           <input
@@ -168,10 +193,11 @@ export function DewDropTerminalCard({
               onRuntimeChange(agent.id, {
                 vpnAlias: event.target.value,
                 workspaceRoot:
-                  event.target.value.trim() &&
-                  (!runtime?.workspaceRoot || runtime.workspaceRoot === '.')
-                    ? getDewDropHost(event.target.value)?.defaultWorkspaceRoot ?? runtime?.workspaceRoot
-                    : runtime?.workspaceRoot,
+                  !event.target.value.trim() && shouldAdoptHostRoot
+                    ? '.'
+                    : event.target.value.trim() && shouldAdoptHostRoot
+                      ? getDewDropHost(event.target.value)?.defaultWorkspaceRoot ?? runtime?.workspaceRoot
+                      : runtime?.workspaceRoot,
               })
             }
             placeholder="local or vpn host"
@@ -185,6 +211,47 @@ export function DewDropTerminalCard({
           </datalist>
         </label>
       </div>
+      {runtimeProfile === 'ollama' ? (
+        <>
+          <div className="freeform-toolbar-panel-actions">
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              onClick={() =>
+                onRuntimeChange(agent.id, {
+                  vpnAlias: undefined,
+                  workspaceRoot: shouldAdoptHostRoot ? '.' : runtime?.workspaceRoot,
+                })
+              }
+              disabled={busy || !hostAlias.trim()}
+            >
+              Local machine
+            </button>
+            {quickHostSuggestions.map((host) => (
+              <button
+                key={host.value}
+                type="button"
+                className="freeform-btn freeform-btn--tool"
+                onClick={() =>
+                  onRuntimeChange(agent.id, {
+                    vpnAlias: host.value,
+                    workspaceRoot:
+                      shouldAdoptHostRoot
+                        ? getDewDropHost(host.value)?.defaultWorkspaceRoot ?? runtime?.workspaceRoot
+                        : runtime.workspaceRoot,
+                  })
+                }
+                disabled={busy || hostAlias.trim() === host.value}
+              >
+                {host.label}
+              </button>
+            ))}
+          </div>
+          <p className="freeform-toolbar-panel-hint">
+            Model tags are structured now. The shell stays aligned with the model until you customize the command by hand.
+          </p>
+        </>
+      ) : null}
 
       <p className="freeform-toolbar-panel-hint">
         {runtime?.sessionState?.sessionId

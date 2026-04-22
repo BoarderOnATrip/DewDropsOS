@@ -61,6 +61,7 @@ export function DewDropTerminalSurface({
   const status = statusLabel(sessionState?.status)
   const tone = statusTone(sessionState?.status)
   const runtimeLabel = runtimeProfileLabel(runtime?.profile)
+  const modelTag = runtime?.modelTag?.trim()
   const shellCommand = runtime?.command ?? 'zsh -i -f'
   const workspaceRoot = runtime?.workspaceRoot ?? '.'
   const hostAlias = runtime?.vpnAlias?.trim() || ''
@@ -259,6 +260,7 @@ export function DewDropTerminalSurface({
           <strong>{agent.title}</strong>
           <span className={`freeform-session-pill is-${tone}`}>{status}</span>
           <span className="freeform-terminal-chip">{runtimeLabel}</span>
+          {modelTag ? <span className="freeform-terminal-chip">{modelTag}</span> : null}
           <span className="freeform-terminal-chip">{shellCommand}</span>
           <span className="freeform-terminal-chip">{workspaceRoot}</span>
           {hostAlias ? <span className="freeform-terminal-chip">{hostAlias}</span> : null}

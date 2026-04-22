@@ -1,4 +1,9 @@
-import { defaultCommandForRuntimeProfile, pickerRuntimeProfile, runtimeProfileLabel } from './agentRuntime'
+import {
+  defaultCommandForRuntimeProfile,
+  defaultModelTagForRuntimeProfile,
+  pickerRuntimeProfile,
+  runtimeProfileLabel,
+} from './agentRuntime'
 import type { AgentRuntimeBinding } from './types'
 
 export type DewDropBootstrapPlan = {
@@ -10,7 +15,11 @@ export type DewDropBootstrapPlan = {
 }
 
 function normalizedCommand(runtime: AgentRuntimeBinding): string {
-  return runtime.command?.trim() || defaultCommandForRuntimeProfile(runtime.profile) || 'zsh -i -f'
+  return (
+    runtime.command?.trim() ||
+    defaultCommandForRuntimeProfile(runtime.profile, { modelTag: runtime.modelTag }) ||
+    'zsh -i -f'
+  )
 }
 
 export function dewDropRouteLabel(runtime: AgentRuntimeBinding | undefined): string {
@@ -26,6 +35,9 @@ export function buildDewDropBootstrapPlan(
   const hostAlias = runtime.vpnAlias?.trim()
   const workspaceRoot = runtime.workspaceRoot?.trim() || '.'
   const routeLabel = dewDropRouteLabel(runtime)
+  const modelTag =
+    runtime.modelTag?.trim() ||
+    (profile === 'ollama' ? defaultModelTagForRuntimeProfile('ollama') : undefined)
 
   if (profile === 'hermes') {
     return {
@@ -51,18 +63,19 @@ export function buildDewDropBootstrapPlan(
   if (profile === 'ollama') {
     return {
       title: 'Local model node bootstrap',
-      summary: `Prepare an Ollama-backed local model worker on ${routeLabel}.`,
+      summary: `Prepare an Ollama-backed local model worker${modelTag ? ` for ${modelTag}` : ''} on ${routeLabel}.`,
       routeLabel,
       commands: [
         '# macOS: brew install ollama',
         '# Linux: curl -fsSL https://ollama.com/install.sh | sh',
-        'ollama pull qwen2.5-coder:7b',
+        '# if Ollama is not already serving: OLLAMA_HOST=127.0.0.1:11434 ollama serve',
+        `ollama pull ${modelTag ?? 'qwen2.5-coder:7b'}`,
         `mkdir -p ${workspaceRoot}`,
         normalizedCommand(runtime),
       ],
       notes: [
-        'Keep the Host field blank to run the model on this machine, or bind it to a GPU host for heavier inference.',
-        'Swap `qwen2.5-coder:7b` for the exact local model tag you want this DewDrop to run.',
+        'Keep the Host field blank to run the model on this machine, or bind it to `gpu-01` / `builder-01` for remote inference.',
+        `Model selection is structured now: this DewDrop is pinned to \`${modelTag ?? 'qwen2.5-coder:7b'}\`, and the shell stays in sync until you customize it.`,
         hostAlias
           ? `Run these on ${hostAlias} if this DewDrop should execute local inference over VPN SSH.`
           : 'Run these locally if this DewDrop should execute local inference on the current machine.',

@@ -85,6 +85,27 @@ describe('buildWorkerTerminalLaunchPlan', () => {
     })
   })
 
+  it('uses the structured Ollama model tag when launching local-model DewDrops', () => {
+    const plan = buildWorkerTerminalLaunchPlan({
+      agentId: 'agent-ollama',
+      title: 'Local model',
+      runtime: {
+        kind: 'terminal',
+        profile: 'ollama',
+        transport: 'cli',
+        instanceLabel: 'ollama-node',
+        modelTag: 'llama3.1:8b',
+      },
+    })
+
+    expect(plan.route).toBe('local')
+    expect(plan.command).toBe('ollama run llama3.1:8b')
+    expect(plan.env).toMatchObject({
+      DEWDROPS_RUNTIME_PROFILE: 'ollama',
+      DEWDROPS_RUNTIME_MODEL_TAG: 'llama3.1:8b',
+    })
+  })
+
   it('adds DewDrops-managed output routing for Playwright nodes', () => {
     const plan = buildWorkerTerminalLaunchPlan({
       agentId: 'agent-4',

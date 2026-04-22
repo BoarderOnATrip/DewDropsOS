@@ -187,6 +187,54 @@ describe('parsePersistedBoardJson', () => {
     )
   })
 
+  it('round-trips structured local-model tags through persisted runtime state', () => {
+    const raw = {
+      v: 1,
+      camera: { x: 0, y: 0, zoom: 1 },
+      cards: [
+        {
+          id: 'a1',
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 80,
+          title: 'Local model',
+          expanded: true,
+          color: '#fff',
+          kind: 'agent' as const,
+          assignedToProblemId: null,
+          agentRuntime: {
+            kind: 'terminal' as const,
+            profile: 'ollama' as const,
+            instanceLabel: 'local-model-a1',
+            modelTag: 'llama3.1:8b',
+            command: 'ollama run llama3.1:8b',
+            transport: 'cli' as const,
+          },
+        },
+      ],
+      wires: [],
+    }
+
+    const parsed = parsePersistedBoardJson(raw)
+    expect(parsed).not.toBeNull()
+    expect(parsed!.cards[0].agentRuntime).toEqual(
+      expect.objectContaining({
+        profile: 'ollama',
+        modelTag: 'llama3.1:8b',
+        command: 'ollama run llama3.1:8b',
+      }),
+    )
+
+    const board = buildBoardPayload(parsed!.camera, parsed!.cards, parsed!.wires)
+    expect(board.cards[0].agentRuntime).toEqual(
+      expect.objectContaining({
+        profile: 'ollama',
+        modelTag: 'llama3.1:8b',
+      }),
+    )
+  })
+
   it('rejects wrong version', () => {
     expect(parsePersistedBoardJson({ v: 2, camera: { x: 0, y: 0, zoom: 1 }, cards: [], wires: [] })).toBeNull()
   })

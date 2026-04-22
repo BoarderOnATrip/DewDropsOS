@@ -91,12 +91,13 @@ Implemented now:
 - each DewDrop can launch locally or over VPN SSH
 - browser workers are first-class runtime profiles, including Playwright
 - local-model workers are first-class runtime profiles through Ollama
+- Ollama DewDrops store a structured model tag and keep the shell synced to it by default
 - host alias is part of the DewDrop model
 
 Immediate next:
 
 - host health becomes live instead of static
-- local-model DewDrops get structured model selection instead of only raw shell editing
+- local-model DewDrops get lower-friction bootstrap and fleet setup on GPU / builder hosts
 - browser, coding, and local-model nodes keep feeding artifacts back into the briefcase
 
 ## Milestones
@@ -165,7 +166,7 @@ Status: in progress
 1. Make runtime presets obvious on each DewDrop.
 2. Bind DewDrop hosts to the actual VPN fabric.
 3. Add host health and lease state.
-4. Add structured model selection for local-model DewDrops.
+4. Add model-aware bootstrap and host prep for local-model DewDrops.
 5. Add clipboard relay for safe operator handoffs and secret paste flows.
 6. Upgrade intake from metadata sorting to real ingest.
 7. Add automatic continuation and reassignment on top of returned artifacts.

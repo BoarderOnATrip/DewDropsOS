@@ -67,11 +67,30 @@ export function listDewDropHostSuggestions(
   runtime: AgentRuntimeBinding | undefined,
 ): Array<{ value: string; label: string; detail: string }> {
   const profile = runtime ? pickerRuntimeProfile(runtime.profile) : 'custom'
+  const rankHost = (host: DewDropHostRecord): number => {
+    if (profile === 'ollama') {
+      if (host.role === 'gpu') return 0
+      if (host.role === 'hermes') return 1
+      return 2
+    }
+    if (profile === 'browser-harness' || profile === 'browser-harness-js' || profile === 'playwright') {
+      if (host.role === 'browser') return 0
+      if (host.role === 'hermes') return 1
+      return 2
+    }
+    if (profile === 'hermes' || profile === 'codex' || profile === 'claude-code') {
+      if (host.role === 'hermes') return 0
+      if (host.role === 'gpu') return 1
+      return 2
+    }
+    return host.role === 'hermes' ? 0 : host.role === 'gpu' ? 1 : 2
+  }
   return DEWDROP_HOSTS
     .filter((host) => {
       if (!host.supportedProfiles || host.supportedProfiles.length === 0) return true
       return host.supportedProfiles.includes(profile)
     })
+    .sort((left, right) => rankHost(left) - rankHost(right) || left.label.localeCompare(right.label))
     .map((host) => ({
       value: host.alias,
       label: host.label,

@@ -51,7 +51,8 @@ Use them when a worker should run inference on:
 Default posture:
 
 - runtime profile: `ollama`
-- default command: `ollama run qwen2.5-coder:7b`
+- structured model tag: `qwen2.5-coder:7b` by default
+- default command: derived from the model tag, e.g. `ollama run qwen2.5-coder:7b`
 - best hosts: `builder-01`, `gpu-01`
 
 Why keep this as a DewDrop instead of a special subsystem:
@@ -60,7 +61,13 @@ Why keep this as a DewDrop instead of a special subsystem:
 - local models can share the same artifact return path as every other worker
 - it keeps model choice replaceable instead of baking one provider into the board
 
-If a room later needs model selection as structured data, add that on top. The first useful version is still just a terminal worker with a sane default local-model command.
+The structured rule now is:
+
+- the DewDrop stores the model tag as data
+- the shell follows that tag while the DewDrop is still on its default command
+- if the operator customizes the shell manually, DewDrops stops overwriting it
+
+That keeps local-model workers editable without losing a real typed model field.
 
 ## Browser Workers
 
@@ -170,6 +177,6 @@ DewDrops should integrate:
 
 1. Add runtime presets in the briefcase so rooms can request browser, coding, media, or research workers intentionally.
 2. Add per-host health and lease state so DewDrops knows which machines are actually available.
-3. Add structured model selection for local-model DewDrops so rooms can choose model tags without editing raw shell commands.
+3. Add model-aware bootstrap helpers so local-model DewDrops can prepare Ollama hosts with even less manual setup.
 4. Add host pools and ephemeral worker provisioning once the VPN host path is stable.
 5. Add a local clipboard relay companion so copy/paste, secrets, and one-shot operator handoffs stay inside a DewDrops-owned safety layer.

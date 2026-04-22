@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_OLLAMA_MODEL_TAG } from './agentRuntime'
 import { buildDewDropBootstrapPlan, dewDropRouteLabel } from './dewdropBootstrap'
 import type { AgentRuntimeBinding } from './types'
 
@@ -36,13 +37,26 @@ describe('dewdropBootstrap', () => {
     const plan = buildDewDropBootstrapPlan(
       runtime({
         profile: 'ollama',
-        command: 'ollama run qwen2.5-coder:7b',
+        modelTag: 'llama3.1:8b',
+        command: 'ollama run llama3.1:8b',
       }),
     )
 
     expect(plan?.title).toBe('Local model node bootstrap')
-    expect(plan?.commands.join('\n')).toContain('ollama pull qwen2.5-coder:7b')
-    expect(plan?.notes.join('\n')).toContain('Swap `qwen2.5-coder:7b`')
+    expect(plan?.summary).toContain('llama3.1:8b')
+    expect(plan?.commands.join('\n')).toContain('ollama pull llama3.1:8b')
+    expect(plan?.notes.join('\n')).toContain('pinned to `llama3.1:8b`')
+  })
+
+  it('falls back to the default model tag when an Ollama DewDrop has no structured model yet', () => {
+    const plan = buildDewDropBootstrapPlan(
+      runtime({
+        profile: 'ollama',
+        command: `ollama run ${DEFAULT_OLLAMA_MODEL_TAG}`,
+      }),
+    )
+
+    expect(plan?.commands.join('\n')).toContain(`ollama pull ${DEFAULT_OLLAMA_MODEL_TAG}`)
   })
 
   it('builds a remote browser harness bootstrap plan', () => {

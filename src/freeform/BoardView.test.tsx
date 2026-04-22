@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BoardView from './BoardView'
@@ -328,8 +328,52 @@ describe('BoardView', () => {
 
     expect(screen.getByText('Selected terminal')).toBeInTheDocument()
     expect(screen.getByLabelText('Runtime')).toHaveValue('ollama')
+    expect(screen.getByLabelText('Model')).toHaveValue('qwen2.5-coder:7b')
     expect(screen.getByLabelText('Shell')).toHaveValue('ollama run qwen2.5-coder:7b')
     expect(screen.getByLabelText('Host')).toHaveValue('')
+  })
+
+  it('keeps the local-model shell in sync when the structured model tag changes', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-local-model-edit"
+        bootState={{
+          camera: { x: 32, y: 64, zoom: 0.9 },
+          cards: [],
+          wires: [],
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New local model' }))
+    const modelField = screen.getByLabelText('Model')
+    fireEvent.change(modelField, { target: { value: 'llama3.1:8b' } })
+
+    expect(screen.getByLabelText('Model')).toHaveValue('llama3.1:8b')
+    expect(screen.getByLabelText('Shell')).toHaveValue('ollama run llama3.1:8b')
+  })
+
+  it('offers quick GPU routing for local-model nodes', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-local-model-host-shortcuts"
+        bootState={{
+          camera: { x: 32, y: 64, zoom: 0.9 },
+          cards: [],
+          wires: [],
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New local model' }))
+    await user.click(screen.getByRole('button', { name: 'GPU 01' }))
+
+    expect(screen.getByLabelText('Host')).toHaveValue('gpu-01')
+    expect(screen.getByLabelText('Root')).toHaveValue('~/compute')
   })
 
   it('returns a selected terminal artifact into the room ledger', async () => {

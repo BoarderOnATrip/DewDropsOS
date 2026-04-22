@@ -50,6 +50,7 @@ describe('dewdropHosts', () => {
     expect(suggestions.map((host) => host.value)).toContain('builder-01')
     expect(suggestions.map((host) => host.value)).toContain('gpu-01')
     expect(suggestions.map((host) => host.value)).not.toContain('browser-01')
+    expect(suggestions[0]?.value).toBe('gpu-01')
   })
 
   it('treats unchecked remote hosts as attention', () => {

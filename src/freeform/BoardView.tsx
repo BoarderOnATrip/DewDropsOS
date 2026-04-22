@@ -63,6 +63,7 @@ import { bumpBriefVersion, compileBriefPacket } from './briefCompiler'
 import { normalizeBriefSpec } from './briefSpec'
 import {
   defaultCommandForRuntimeProfile,
+  defaultModelTagForRuntimeProfile,
   defaultRuntimeForProfile,
   defaultTerminalRuntime,
   normalizeAgentRuntime,
@@ -1815,8 +1816,16 @@ export default function BoardView({
       updateAgentCardById(agentId, (card) => {
         const current = card.agentRuntime ?? defaultTerminalRuntime(card.id, card.title)
         const nextProfile = patch.profile ?? current.profile
-        const currentDefaultCommand = defaultCommandForRuntimeProfile(current.profile)
-        const nextDefaultCommand = defaultCommandForRuntimeProfile(nextProfile)
+        const nextModelTag =
+          nextProfile === 'ollama'
+            ? (('modelTag' in patch ? patch.modelTag : current.modelTag) || defaultModelTagForRuntimeProfile('ollama'))
+            : undefined
+        const currentDefaultCommand = defaultCommandForRuntimeProfile(current.profile, {
+          modelTag: current.modelTag,
+        })
+        const nextDefaultCommand = defaultCommandForRuntimeProfile(nextProfile, {
+          modelTag: nextModelTag,
+        })
         const nextCommand =
           patch.command !== undefined
             ? patch.command
@@ -1831,6 +1840,7 @@ export default function BoardView({
             kind: patch.kind ?? current.kind ?? 'terminal',
             transport: patch.transport ?? current.transport ?? 'cli',
             profile: nextProfile,
+            modelTag: nextModelTag,
             command: nextCommand,
           },
         }
@@ -2276,6 +2286,18 @@ export default function BoardView({
     }, 30_000)
     return () => window.clearInterval(intervalId)
   }, [isJsdomRuntime, refreshWorkerHostStatus, selectedProblem, selectedProblemAgents])
+
+  useEffect(() => {
+    if (isJsdomRuntime || selectedProblem) return
+    const hostAlias = selectedAgent?.agentRuntime?.vpnAlias?.trim()
+    if (!hostAlias) return
+
+    void refreshWorkerHostStatus(hostAlias, { quiet: true })
+    const intervalId = window.setInterval(() => {
+      void refreshWorkerHostStatus(hostAlias, { quiet: true })
+    }, 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [isJsdomRuntime, refreshWorkerHostStatus, selectedAgent, selectedProblem])
 
   useEffect(() => {
     if (isJsdomRuntime) return

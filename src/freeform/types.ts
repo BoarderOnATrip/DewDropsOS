@@ -116,6 +116,7 @@ export type AgentRuntimeBinding = {
   kind: AgentRuntimeKind
   profile: AgentRuntimeProfile
   instanceLabel: string
+  modelTag?: string
   command?: string
   vpnAlias?: string
   workspaceRoot?: string

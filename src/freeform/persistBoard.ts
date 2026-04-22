@@ -431,6 +431,7 @@ function parseAgentRuntime(raw: unknown): AgentRuntimeBinding | null {
     transport,
     instanceLabel: runtime.instanceLabel,
   }
+  if (isStr(runtime.modelTag)) parsed.modelTag = runtime.modelTag
   if (isStr(runtime.command)) parsed.command = runtime.command
   if (isStr(runtime.vpnAlias)) parsed.vpnAlias = runtime.vpnAlias
   if (isStr(runtime.workspaceRoot)) parsed.workspaceRoot = runtime.workspaceRoot

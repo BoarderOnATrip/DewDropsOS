@@ -48,7 +48,7 @@ function enhancePlaywrightCommand(command: string, artifactDir: string): string 
 function runtimeCommand(runtime: AgentRuntimeBinding): string {
   const explicit = runtime.command?.trim()
   if (explicit) return explicit
-  return defaultCommandForRuntimeProfile(runtime.profile) ?? 'zsh -i -f'
+  return defaultCommandForRuntimeProfile(runtime.profile, { modelTag: runtime.modelTag }) ?? 'zsh -i -f'
 }
 
 function remoteExecCommand(command: string, workspaceRoot?: string): string {
@@ -76,6 +76,7 @@ export function buildWorkerTerminalLaunchPlan(
     DEWDROPS_RUNTIME_VPN_ALIAS: hostAlias ?? '',
     DEWDROPS_RUNTIME_INSTANCE_LABEL: input.runtime.instanceLabel,
     DEWDROPS_RUNTIME_ROUTE: hostAlias ? 'vpn-ssh' : 'local',
+    DEWDROPS_RUNTIME_MODEL_TAG: input.runtime.modelTag?.trim() || '',
     DEWDROPS_ARTIFACT_DIR: artifactDir,
     DEWDROPS_PLAYWRIGHT_OUTPUT_DIR: `${artifactDir}/test-results`,
     PLAYWRIGHT_HTML_OUTPUT_DIR: `${artifactDir}/playwright-report`,

@@ -15,6 +15,7 @@ type RuntimeLike = Partial<AgentRuntimeBinding> & {
   profile?: string
   provider?: string
   transport?: string
+  modelTag?: string
   sessionPolicy?: Partial<DewDropSessionPolicy>
   sessionState?: Partial<DewDropSessionState>
 }
@@ -141,12 +142,38 @@ function normalizeList(values: unknown): string[] {
 
 const DEFAULT_TERMINAL_COMMAND = 'zsh -i -f'
 const DEFAULT_TERMINAL_ROOT = '.'
+export const DEFAULT_OLLAMA_MODEL_TAG = 'qwen2.5-coder:7b'
 
-export function defaultCommandForRuntimeProfile(profile: AgentRuntimeProfile): string | undefined {
+function normalizeModelTag(modelTag: string | undefined): string | undefined {
+  const normalized = modelTag?.trim()
+  return normalized || undefined
+}
+
+function inferOllamaModelTag(command: string | undefined): string | undefined {
+  const normalized = command?.trim()
+  if (!normalized) return undefined
+  const match = normalized.match(/^ollama\s+run\s+([^\s]+)(?:\s|$)/i)
+  return normalizeModelTag(match?.[1])
+}
+
+export function defaultModelTagForRuntimeProfile(
+  profile: AgentRuntimeProfile,
+): string | undefined {
+  if (profile === 'ollama') return DEFAULT_OLLAMA_MODEL_TAG
+  return undefined
+}
+
+export function defaultCommandForRuntimeProfile(
+  profile: AgentRuntimeProfile,
+  options?: { modelTag?: string },
+): string | undefined {
   if (profile === 'custom') return DEFAULT_TERMINAL_COMMAND
   if (profile === 'openclaw') return 'openclaw'
   if (profile === 'hermes') return 'hermes'
-  if (profile === 'ollama') return 'ollama run qwen2.5-coder:7b'
+  if (profile === 'ollama') {
+    const modelTag = normalizeModelTag(options?.modelTag) ?? DEFAULT_OLLAMA_MODEL_TAG
+    return `ollama run ${modelTag}`
+  }
   if (profile === 'codex') return 'codex'
   if (profile === 'claude-code') return 'claude'
   if (profile === 'paperclip') return 'paperclip'
@@ -159,29 +186,34 @@ export function defaultCommandForRuntimeProfile(profile: AgentRuntimeProfile): s
 function normalizeTerminalEnvelope(
   kind: AgentRuntimeKind,
   profile: AgentRuntimeProfile,
+  modelTag: string | undefined,
   explicitCommand: string | undefined,
-): { profile: AgentRuntimeProfile; command: string | undefined } {
+): { profile: AgentRuntimeProfile; modelTag: string | undefined; command: string | undefined } {
   if (kind !== 'terminal') {
-    return { profile, command: explicitCommand }
+    return { profile, modelTag, command: explicitCommand }
   }
 
   const command = explicitCommand?.trim() || undefined
+  const defaultCommand = defaultCommandForRuntimeProfile(profile, { modelTag })
   if (!command) {
-    return { profile: 'custom', command: DEFAULT_TERMINAL_COMMAND }
+    if (profile === 'custom') {
+      return { profile: 'custom', modelTag: undefined, command: DEFAULT_TERMINAL_COMMAND }
+    }
+    return { profile, modelTag, command: defaultCommand }
   }
 
   const legacyProviderCommand =
-    profile === 'custom' ? undefined : defaultCommandForRuntimeProfile(profile)
+    profile === 'custom' ? undefined : defaultCommand
 
   if (
     profile !== 'custom' &&
     (LEGACY_PROVIDER_PROFILES as readonly string[]).includes(profile) &&
     legacyProviderCommand === command
   ) {
-    return { profile: 'custom', command: DEFAULT_TERMINAL_COMMAND }
+    return { profile: 'custom', modelTag: undefined, command: DEFAULT_TERMINAL_COMMAND }
   }
 
-  return { profile, command }
+  return { profile, modelTag, command }
 }
 
 function inferProfile(runtime: RuntimeLike | undefined, fallback: AgentRuntimeProfile): AgentRuntimeProfile {
@@ -279,10 +311,12 @@ export function defaultRuntimeForProfile(
   const base = defaultTerminalRuntime(cardId, title)
   const visibleProfile = pickerRuntimeProfile(profile)
   if (visibleProfile === 'custom') return base
+  const modelTag = defaultModelTagForRuntimeProfile(visibleProfile)
   return {
     ...base,
     profile: visibleProfile,
-    command: defaultCommandForRuntimeProfile(visibleProfile),
+    modelTag,
+    command: defaultCommandForRuntimeProfile(visibleProfile, { modelTag }),
   }
 }
 
@@ -310,15 +344,24 @@ export function normalizeAgentRuntime(
     typeof normalized?.command === 'string' && normalized.command.trim()
       ? normalized.command.trim()
       : undefined
-  const terminalEnvelope = normalizeTerminalEnvelope(kind, inferredProfile, explicitCommand)
+  const modelTag =
+    inferredProfile === 'ollama'
+      ? normalizeModelTag(
+          typeof normalized?.modelTag === 'string'
+            ? normalized.modelTag
+            : inferOllamaModelTag(explicitCommand) ?? defaultModelTagForRuntimeProfile('ollama'),
+        )
+      : undefined
+  const terminalEnvelope = normalizeTerminalEnvelope(kind, inferredProfile, modelTag, explicitCommand)
   const profile = terminalEnvelope.profile
+  const normalizedModelTag = terminalEnvelope.modelTag
   const transport = isRuntimeTransport(normalized?.transport) ? normalized.transport : kind === 'terminal' ? 'cli' : 'api'
   const instanceLabel =
     typeof normalized?.instanceLabel === 'string' && normalized.instanceLabel.trim()
       ? normalized.instanceLabel.trim()
       : base.instanceLabel
-  const defaultCommand = defaultCommandForRuntimeProfile(profile)
-  const command = terminalEnvelope.command ?? (kind === 'terminal' ? defaultCommand : undefined)
+  const defaultRuntimeCommand = defaultCommandForRuntimeProfile(profile, { modelTag: normalizedModelTag })
+  const command = terminalEnvelope.command ?? (kind === 'terminal' ? defaultRuntimeCommand : undefined)
   const vpnAlias =
     typeof normalized?.vpnAlias === 'string' && normalized.vpnAlias.trim()
       ? normalized.vpnAlias.trim()
@@ -340,6 +383,7 @@ export function normalizeAgentRuntime(
     profile,
     transport,
     instanceLabel,
+    modelTag: normalizedModelTag,
     command,
     vpnAlias,
     workspaceRoot,
@@ -383,7 +427,12 @@ export function describeAgentRuntime(card: WorkflowCard): string {
   })
   const root = runtime.workspaceRoot?.trim() || DEFAULT_TERMINAL_ROOT
   const host = runtime.vpnAlias?.trim()
-  const profile = runtime.profile === 'custom' ? 'shell' : runtime.profile
+  const profile =
+    runtime.profile === 'custom'
+      ? 'shell'
+      : runtime.profile === 'ollama' && runtime.modelTag
+        ? `${runtime.profile}:${runtime.modelTag}`
+        : runtime.profile
   return host ? `${profile} via ${host} in ${root}` : `${profile} in ${root}`
 }
 
