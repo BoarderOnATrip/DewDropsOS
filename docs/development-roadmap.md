@@ -90,12 +90,14 @@ Implemented now:
 - each DewDrop is a terminal envelope
 - each DewDrop can launch locally or over VPN SSH
 - browser workers are first-class runtime profiles, including Playwright
+- local-model workers are first-class runtime profiles through Ollama
 - host alias is part of the DewDrop model
 
 Immediate next:
 
-- Hermes becomes a first-class runtime profile and node concept
-- browser nodes and coding nodes become easy presets instead of manual shell editing
+- host health becomes live instead of static
+- local-model DewDrops get structured model selection instead of only raw shell editing
+- browser, coding, and local-model nodes keep feeding artifacts back into the briefcase
 
 ## Milestones
 
@@ -111,16 +113,19 @@ Status: in progress
 
 ### Phase 2: Node Templates
 
-Status: active next
+Status: materially shipped
 
 - `Shell` node
 - `Hermes` node
 - `Browser Harness` node
 - `Browser JS` node
 - `Playwright` node
+- `Local model / Ollama` node
 - clear host targeting
 
 ### Phase 3: Host Fabric
+
+Status: in progress
 
 - stable VPN naming
 - DewDrops host registry with known machine aliases
@@ -148,6 +153,8 @@ Status: active next
 
 ### Phase 6: Artifact Bus
 
+Status: in progress
+
 - typed handoffs between workers
 - acceptance checks
 - review queues
@@ -156,12 +163,12 @@ Status: active next
 ## Immediate Build Order
 
 1. Make runtime presets obvious on each DewDrop.
-2. Add Hermes-backed node templates.
-3. Bind DewDrop hosts to the actual VPN fabric.
-4. Add browser-node setup flow.
-5. Add host health and lease state.
-6. Add clipboard relay for safe operator handoffs and secret paste flows.
-7. Upgrade intake from metadata sorting to real ingest.
+2. Bind DewDrop hosts to the actual VPN fabric.
+3. Add host health and lease state.
+4. Add structured model selection for local-model DewDrops.
+5. Add clipboard relay for safe operator handoffs and secret paste flows.
+6. Upgrade intake from metadata sorting to real ingest.
+7. Add automatic continuation and reassignment on top of returned artifacts.
 
 ## Current Working Rule
 
@@ -194,6 +201,6 @@ DewDrops is across the line when:
 
 - a human can define a problem cleanly in the briefcase
 - workers can be spun up locally or remotely without tool surgery
-- browser work and coding work both run as first-class DewDrops
+- browser work, coding work, and local-model work all run as first-class DewDrops
 - artifacts return into the briefcase with provenance
 - the swarm can continue intelligently without constant human babysitting

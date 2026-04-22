@@ -68,6 +68,7 @@ export type AgentRuntimeKind = 'terminal' | 'service'
 export type AgentRuntimeProfile =
   | 'openclaw'
   | 'hermes'
+  | 'ollama'
   | 'codex'
   | 'claude-code'
   | 'paperclip'

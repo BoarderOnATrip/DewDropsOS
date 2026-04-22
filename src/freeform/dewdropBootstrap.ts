@@ -48,6 +48,28 @@ export function buildDewDropBootstrapPlan(
     }
   }
 
+  if (profile === 'ollama') {
+    return {
+      title: 'Local model node bootstrap',
+      summary: `Prepare an Ollama-backed local model worker on ${routeLabel}.`,
+      routeLabel,
+      commands: [
+        '# macOS: brew install ollama',
+        '# Linux: curl -fsSL https://ollama.com/install.sh | sh',
+        'ollama pull qwen2.5-coder:7b',
+        `mkdir -p ${workspaceRoot}`,
+        normalizedCommand(runtime),
+      ],
+      notes: [
+        'Keep the Host field blank to run the model on this machine, or bind it to a GPU host for heavier inference.',
+        'Swap `qwen2.5-coder:7b` for the exact local model tag you want this DewDrop to run.',
+        hostAlias
+          ? `Run these on ${hostAlias} if this DewDrop should execute local inference over VPN SSH.`
+          : 'Run these locally if this DewDrop should execute local inference on the current machine.',
+      ],
+    }
+  }
+
   if (profile === 'browser-harness') {
     return {
       title: 'Browser worker bootstrap',

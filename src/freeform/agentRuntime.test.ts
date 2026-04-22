@@ -42,6 +42,7 @@ describe('normalizeAgentRuntime', () => {
 
   it('provides browser worker defaults for browser harness profiles', () => {
     expect(defaultCommandForRuntimeProfile('hermes')).toBe('hermes')
+    expect(defaultCommandForRuntimeProfile('ollama')).toBe('ollama run qwen2.5-coder:7b')
     expect(defaultCommandForRuntimeProfile('browser-harness')).toBe('browser-harness')
     expect(defaultCommandForRuntimeProfile('browser-harness-js')).toBe('browser-harness-js')
     expect(defaultCommandForRuntimeProfile('playwright')).toBe('npx playwright test')
@@ -67,6 +68,7 @@ describe('normalizeAgentRuntime', () => {
     expect(pickerRuntimeProfile('openclaw')).toBe('custom')
     expect(pickerRuntimeProfile('paperclip')).toBe('custom')
     expect(pickerRuntimeProfile('hermes')).toBe('hermes')
+    expect(pickerRuntimeProfile('ollama')).toBe('ollama')
   })
 
   it('defaults new DewDrops to local shells without an implicit host alias', () => {
@@ -82,6 +84,15 @@ describe('normalizeAgentRuntime', () => {
 
     expect(runtime.profile).toBe('hermes')
     expect(runtime.command).toBe('hermes')
+    expect(runtime.workspaceRoot).toBe('.')
+    expect(runtime.vpnAlias).toBeUndefined()
+  })
+
+  it('builds profile-specific defaults for local model nodes', () => {
+    const runtime = defaultRuntimeForProfile('agent-1', 'Local model 1', 'ollama')
+
+    expect(runtime.profile).toBe('ollama')
+    expect(runtime.command).toBe('ollama run qwen2.5-coder:7b')
     expect(runtime.workspaceRoot).toBe('.')
     expect(runtime.vpnAlias).toBeUndefined()
   })

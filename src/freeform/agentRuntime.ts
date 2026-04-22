@@ -22,6 +22,7 @@ type RuntimeLike = Partial<AgentRuntimeBinding> & {
 const TERMINAL_PROFILES: readonly AgentRuntimeProfile[] = [
   'openclaw',
   'hermes',
+  'ollama',
   'codex',
   'claude-code',
   'paperclip',
@@ -51,6 +52,11 @@ export const DEWDROP_RUNTIME_PROFILE_OPTIONS: ReadonlyArray<{
     value: 'hermes',
     label: 'Hermes',
     detail: 'Host-level agent runtime with skills, memory, and remote backends.',
+  },
+  {
+    value: 'ollama',
+    label: 'Local model',
+    detail: 'Ollama-backed local model worker for on-box or GPU-host inference.',
   },
   {
     value: 'codex',
@@ -140,6 +146,7 @@ export function defaultCommandForRuntimeProfile(profile: AgentRuntimeProfile): s
   if (profile === 'custom') return DEFAULT_TERMINAL_COMMAND
   if (profile === 'openclaw') return 'openclaw'
   if (profile === 'hermes') return 'hermes'
+  if (profile === 'ollama') return 'ollama run qwen2.5-coder:7b'
   if (profile === 'codex') return 'codex'
   if (profile === 'claude-code') return 'claude'
   if (profile === 'paperclip') return 'paperclip'

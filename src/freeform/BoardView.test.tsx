@@ -310,6 +310,28 @@ describe('BoardView', () => {
     expect(screen.getByLabelText('Host')).toHaveValue('')
   })
 
+  it('spins up a local model node from the toolbar', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-new-local-model"
+        bootState={{
+          camera: { x: 32, y: 64, zoom: 0.9 },
+          cards: [],
+          wires: [],
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New local model' }))
+
+    expect(screen.getByText('Selected terminal')).toBeInTheDocument()
+    expect(screen.getByLabelText('Runtime')).toHaveValue('ollama')
+    expect(screen.getByLabelText('Shell')).toHaveValue('ollama run qwen2.5-coder:7b')
+    expect(screen.getByLabelText('Host')).toHaveValue('')
+  })
+
   it('returns a selected terminal artifact into the room ledger', async () => {
     const user = userEvent.setup()
 

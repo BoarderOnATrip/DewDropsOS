@@ -32,6 +32,19 @@ describe('dewdropBootstrap', () => {
     expect(plan?.routeLabel).toBe('local')
   })
 
+  it('builds a local model bootstrap plan', () => {
+    const plan = buildDewDropBootstrapPlan(
+      runtime({
+        profile: 'ollama',
+        command: 'ollama run qwen2.5-coder:7b',
+      }),
+    )
+
+    expect(plan?.title).toBe('Local model node bootstrap')
+    expect(plan?.commands.join('\n')).toContain('ollama pull qwen2.5-coder:7b')
+    expect(plan?.notes.join('\n')).toContain('Swap `qwen2.5-coder:7b`')
+  })
+
   it('builds a remote browser harness bootstrap plan', () => {
     const plan = buildDewDropBootstrapPlan(
       runtime({

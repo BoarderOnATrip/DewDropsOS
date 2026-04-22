@@ -31,7 +31,7 @@ const DEWDROP_HOSTS: readonly DewDropHostRecord[] = [
     role: 'hermes',
     summary: 'General Hermes worker node for coding, planning, and long-running tasks.',
     defaultWorkspaceRoot: '~/workspace',
-    supportedProfiles: ['hermes', 'codex', 'claude-code', 'playwright', 'custom'],
+    supportedProfiles: ['hermes', 'ollama', 'codex', 'claude-code', 'playwright', 'custom'],
   },
   {
     alias: 'browser-01',
@@ -49,7 +49,7 @@ const DEWDROP_HOSTS: readonly DewDropHostRecord[] = [
     role: 'gpu',
     summary: 'Heavy compute node for render, model, and long-running media workloads.',
     defaultWorkspaceRoot: '~/compute',
-    supportedProfiles: ['hermes', 'custom'],
+    supportedProfiles: ['hermes', 'ollama', 'custom'],
   },
 ] as const
 

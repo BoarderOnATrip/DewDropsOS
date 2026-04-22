@@ -29,6 +29,7 @@ A DewDrop is:
 That lets the same DewDrop run:
 
 - `hermes`
+- `ollama run qwen2.5-coder:7b`
 - a plain shell
 - `codex`
 - `claude`
@@ -36,6 +37,30 @@ That lets the same DewDrop run:
 - `browser-harness-js`
 - `playwright`
 - anything custom
+
+## Local Model Workers
+
+Local-model DewDrops should stay terminal-first too.
+
+Use them when a worker should run inference on:
+
+- the operator machine
+- a GPU box like `gpu-01`
+- a builder host that already has Ollama and models cached
+
+Default posture:
+
+- runtime profile: `ollama`
+- default command: `ollama run qwen2.5-coder:7b`
+- best hosts: `builder-01`, `gpu-01`
+
+Why keep this as a DewDrop instead of a special subsystem:
+
+- the same approval and routing model still applies
+- local models can share the same artifact return path as every other worker
+- it keeps model choice replaceable instead of baking one provider into the board
+
+If a room later needs model selection as structured data, add that on top. The first useful version is still just a terminal worker with a sane default local-model command.
 
 ## Browser Workers
 
@@ -139,11 +164,12 @@ DewDrops should integrate:
 - VPN / zero-trust host routing
 - remote machines
 - model-specific CLIs
+- local model runtimes such as Ollama
 
 ## Near-Term Next Steps
 
 1. Add runtime presets in the briefcase so rooms can request browser, coding, media, or research workers intentionally.
 2. Add per-host health and lease state so DewDrops knows which machines are actually available.
-3. Add artifact capture for browser runs: screenshots, page notes, downloaded files, and citations back into the briefcase.
+3. Add structured model selection for local-model DewDrops so rooms can choose model tags without editing raw shell commands.
 4. Add host pools and ephemeral worker provisioning once the VPN host path is stable.
 5. Add a local clipboard relay companion so copy/paste, secrets, and one-shot operator handoffs stay inside a DewDrops-owned safety layer.

@@ -396,7 +396,7 @@ const BULK_SUMMON_COLORS = [
 ]
 
 const DEWDROP_NODE_TEMPLATES: ReadonlyArray<{
-  id: 'shell' | 'hermes' | 'browser' | 'playwright'
+  id: 'shell' | 'hermes' | 'browser' | 'playwright' | 'local-model'
   label: string
   notice: string
   titlePrefix: string
@@ -435,7 +435,25 @@ const DEWDROP_NODE_TEMPLATES: ReadonlyArray<{
     color: '#ffd60a',
     profile: 'playwright',
   },
+  {
+    id: 'local-model',
+    label: 'New local model',
+    notice: 'New local model node ready',
+    titlePrefix: 'Local model',
+    color: '#ff9f0a',
+    profile: 'ollama',
+  },
 ] as const
+
+function dewDropNodeTemplate(
+  id: (typeof DEWDROP_NODE_TEMPLATES)[number]['id'],
+): (typeof DEWDROP_NODE_TEMPLATES)[number] {
+  const template = DEWDROP_NODE_TEMPLATES.find((entry) => entry.id === id)
+  if (!template) {
+    throw new Error(`Unknown DewDrop node template: ${id}`)
+  }
+  return template
+}
 
 const TOOLBAR_PANEL_OPEN_KEY = 'dewdrops-toolbar-panel-open'
 const WORKSPACE_MODE_KEY = 'dewdrops-workspace-mode'
@@ -1082,7 +1100,7 @@ export default function BoardView({
   }, [camera.x, camera.y, spawnNodeAt])
 
   const spawnTerminalInView = useCallback(() => {
-    spawnNodeInView(DEWDROP_NODE_TEMPLATES[0]!)
+    spawnNodeInView(dewDropNodeTemplate('shell'))
   }, [spawnNodeInView])
 
   useEffect(() => {
@@ -1097,17 +1115,22 @@ export default function BoardView({
       }
       if (key === 'h') {
         e.preventDefault()
-        spawnNodeInView(DEWDROP_NODE_TEMPLATES[1]!)
+        spawnNodeInView(dewDropNodeTemplate('hermes'))
         return
       }
       if (key === 'b') {
         e.preventDefault()
-        spawnNodeInView(DEWDROP_NODE_TEMPLATES[2]!)
+        spawnNodeInView(dewDropNodeTemplate('browser'))
         return
       }
       if (key === 'p') {
         e.preventDefault()
-        spawnNodeInView(DEWDROP_NODE_TEMPLATES[3]!)
+        spawnNodeInView(dewDropNodeTemplate('playwright'))
+        return
+      }
+      if (key === 'l') {
+        e.preventDefault()
+        spawnNodeInView(dewDropNodeTemplate('local-model'))
       }
     }
     window.addEventListener('keydown', onKey)
@@ -3062,7 +3085,7 @@ export default function BoardView({
           <h1>DewDrops</h1>
           <p>
             {workspaceName ? `${workspaceName} • ` : ''}
-            Spin up `Terminal`, `Hermes`, `Browser`, or `Playwright` nodes instantly. Shortcuts: `T`, `H`, `B`, `P`. Double-click empty space still drops a terminal.
+            Spin up `Terminal`, `Hermes`, `Browser`, `Playwright`, or `Local model` nodes instantly. Shortcuts: `T`, `H`, `B`, `P`, `L`. Double-click empty space still drops a terminal.
           </p>
         </div>
         <div className="freeform-toolbar-actions">

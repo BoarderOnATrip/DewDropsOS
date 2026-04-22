@@ -45,6 +45,13 @@ describe('dewdropHosts', () => {
     expect(suggestions.map((host) => host.value)).not.toContain('gpu-01')
   })
 
+  it('offers builder and gpu hosts for local model nodes', () => {
+    const suggestions = listDewDropHostSuggestions(runtime({ profile: 'ollama' }))
+    expect(suggestions.map((host) => host.value)).toContain('builder-01')
+    expect(suggestions.map((host) => host.value)).toContain('gpu-01')
+    expect(suggestions.map((host) => host.value)).not.toContain('browser-01')
+  })
+
   it('treats unchecked remote hosts as attention', () => {
     const summary = summarizeDewDropHostBindings([
       runtime(),

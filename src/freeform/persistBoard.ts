@@ -391,6 +391,7 @@ function parseAgentRuntime(raw: unknown): AgentRuntimeBinding | null {
   const isProfile = (value: unknown): value is AgentRuntimeProfile =>
     value === 'openclaw' ||
     value === 'hermes' ||
+    value === 'ollama' ||
     value === 'codex' ||
     value === 'claude-code' ||
     value === 'paperclip' ||
