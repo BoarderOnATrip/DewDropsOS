@@ -106,6 +106,7 @@ import {
   updateRunArtifactStatus,
   upsertRunLedgerEntry,
 } from './runLedger'
+import { planProblemAutoContinuation } from './autoContinuation'
 import { clampNumber, swarmRunIsActive } from './runFormat'
 import { buildProblemSessionReadiness } from './sessionReadiness'
 import {
@@ -587,6 +588,9 @@ export default function BoardView({
   })
   const [selectionTrace, setSelectionTrace] = useState<SelectionTraceEntry[]>([])
   const returnedDewDropRunSignaturesRef = useRef(new Map<string, string>())
+  const autoContinuationAttemptRef = useRef(
+    new Map<string, { sourceRunId: string; nextRetryAt: number }>(),
+  )
   const sizeRef = useRef(size)
   const cameraRef = useRef(camera)
   const cardsRef = useRef(cards)
@@ -1633,6 +1637,11 @@ export default function BoardView({
     }
     return recentRuns.slice(0, 6)
   }, [recentRuns, selectedProblem?.butlerRoomId])
+
+  const selectedProblemAutoContinuationPlan = useMemo(() => {
+    if (!selectedProblem) return null
+    return planProblemAutoContinuation(selectedProblem, cards, wires, visibleRuns, workspaceMode)
+  }, [cards, selectedProblem, visibleRuns, wires, workspaceMode])
 
   const latestProblemRunById = useMemo(() => {
     const next = new Map<string, ButlerSwarmRun>()
@@ -2785,24 +2794,49 @@ export default function BoardView({
     [paperclipSettings, selectedProblem?.lastPaperclipIssueId],
   )
 
-  const launchSelectedProblemSwarm = useCallback(async () => {
-    if (!selectedProblem) {
-      setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
-      return
+  const launchProblemSwarm = useCallback(async (
+    problemId: string,
+    options?: {
+      objectiveOverride?: string
+      templateOverride?: ButlerSwarmTemplate
+      quiet?: boolean
+      continuationSourceRunId?: string
+      continuationReason?: string
+    },
+  ) => {
+    const cardsNow = cardsRef.current
+    const problem = cardsNow.find((card) => card.id === problemId && card.kind === 'problem')
+    if (!problem) {
+      if (!options?.quiet) {
+        setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
+      }
+      return false
     }
-    if (!launchObjective.trim()) {
-      setBoardNotice({ text: 'Swarm objective is empty.', tone: 'error' })
-      return
+
+    const template =
+      options?.templateOverride ??
+      (problem.swarmTemplate as ButlerSwarmTemplate | undefined) ??
+      'planning'
+    const objective =
+      options?.objectiveOverride?.trim() ||
+      buildProblemSwarmObjective(problem, cardsNow, wiresRef.current, workspaceMode).trim()
+    if (!objective) {
+      if (!options?.quiet) {
+        setBoardNotice({ text: 'Swarm objective is empty.', tone: 'error' })
+      }
+      return false
     }
+
+    const problemAgents = agentsInProblemSwarm(problem.id, cardsNow, wiresRef.current)
 
     setLaunchBusy(true)
     try {
-      const problemForLaunch = syncProblemBriefBindings(selectedProblem)
+      const problemForLaunch = syncProblemBriefBindings(problem)
       const blueprint = buildProblemSessionBlueprint(problemForLaunch, workspaceMode)
       const briefPacket = buildProblemBriefPacket(problemForLaunch)
       const launchMetadata = buildProblemLaunchMetadata(problemForLaunch)
-      const modelPacket = buildProblemModelPacket(problemForLaunch, cards, wires, workspaceMode, {
-        template: launchTemplate,
+      const modelPacket = buildProblemModelPacket(problemForLaunch, cardsNow, wiresRef.current, workspaceMode, {
+        template,
       })
       let nextSettings = bridgeSettings
       const isLocalBridge = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(bridgeSettings.url.trim())
@@ -2812,9 +2846,9 @@ export default function BoardView({
       }
 
       const contract = await createSwarmContract(nextSettings, {
-        title: selectedProblem.title,
-        objective: launchObjective.trim(),
-        template: launchTemplate,
+        title: problem.title,
+        objective,
+        template,
         capability_profile_id: blueprint.capabilityProfileId,
         swarm_recipe_id: blueprint.swarmRecipeId,
         rtk_basis: {
@@ -2826,20 +2860,20 @@ export default function BoardView({
         briefPacket: briefPacket ?? undefined,
         agents: buildSwarmContractAgents(
           problemForLaunch,
-          selectedProblemAgents,
-          launchTemplate,
-          launchObjective.trim(),
+          problemAgents,
+          template,
+          objective,
           workspaceMode,
         ),
-        room_id: selectedProblem.butlerRoomId,
+        room_id: problem.butlerRoomId,
         room_kind: launchMetadata.roomKind,
         target: blueprint.target,
         launcher: blueprint.launcher,
         metadata: {
           ...launchMetadata.metadata,
-          dewdrops_problem_id: selectedProblem.id,
-          selected_agent_count: selectedProblemAgents.length,
-          selected_agent_ids: selectedProblemAgents.map((agent) => agent.id),
+          dewdrops_problem_id: problem.id,
+          selected_agent_count: problemAgents.length,
+          selected_agent_ids: problemAgents.map((agent) => agent.id),
           workspace_mode: blueprint.workspaceMode,
           launch_surface: blueprint.launchSurface,
           capability_profile_id: blueprint.capabilityProfileId,
@@ -2864,10 +2898,12 @@ export default function BoardView({
           memory_wing: blueprint.memoryWing,
           memory_room: blueprint.memoryRoom,
           handoff_packet: blueprint.handoffText,
-          paperclip_company_id: selectedProblem.paperclipCompanyId,
-          paperclip_project_id: selectedProblem.paperclipProjectId,
-          paperclip_agent_ids: selectedProblem.paperclipAgentIds ?? [],
-          paperclip_lead_agent_id: selectedProblem.paperclipLeadAgentId,
+          paperclip_company_id: problem.paperclipCompanyId,
+          paperclip_project_id: problem.paperclipProjectId,
+          paperclip_agent_ids: problem.paperclipAgentIds ?? [],
+          paperclip_lead_agent_id: problem.paperclipLeadAgentId,
+          auto_continuation_source_run_id: options?.continuationSourceRunId,
+          auto_continuation_reason: options?.continuationReason,
         },
         source_refs: blueprint.sourceRefs,
         created_by: 'dewdrops',
@@ -2880,32 +2916,86 @@ export default function BoardView({
 
       setCards((list) =>
         list.map((card) =>
-          card.id === selectedProblem.id
+          card.id === problem.id
             ? {
                 ...card,
                 butlerRoomId: contract.room_id,
                 lastSwarmContractId: contract.id,
                 lastSwarmRunId: runId || card.lastSwarmRunId,
-                swarmTemplate: launchTemplate,
+                swarmTemplate: template,
+                lastAutoContinuationSourceRunId:
+                  options?.continuationSourceRunId ?? card.lastAutoContinuationSourceRunId,
               }
             : card,
         ),
       )
       await refreshRuns(true)
       setBoardNotice({
-        text: `Launched Butler swarm for “${selectedProblem.title}”`,
+        text: options?.continuationSourceRunId
+          ? `Auto-continued Butler swarm for “${problem.title}”`
+          : `Launched Butler swarm for “${problem.title}”`,
         tone: 'ok',
       })
+      return true
     } catch (error) {
       const message =
         error instanceof ButlerBridgeError || error instanceof Error
           ? error.message
           : 'Could not launch Butler swarm'
-      setBoardNotice({ text: message, tone: 'error' })
+      setBoardNotice({
+        text: options?.continuationSourceRunId
+          ? `Could not auto-continue “${problem.title}”: ${message}`
+          : message,
+        tone: 'error',
+      })
+      return false
     } finally {
       setLaunchBusy(false)
     }
-  }, [bridgeSettings, cards, launchObjective, launchTemplate, refreshRuns, selectedProblem, selectedProblemAgents, wires, workspaceMode])
+  }, [bridgeSettings, refreshRuns, workspaceMode])
+
+  const launchSelectedProblemSwarm = useCallback(async () => {
+    if (!selectedProblem) {
+      setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
+      return
+    }
+    await launchProblemSwarm(selectedProblem.id, {
+      objectiveOverride: launchObjective.trim(),
+      templateOverride: launchTemplate,
+    })
+  }, [launchObjective, launchProblemSwarm, launchTemplate, selectedProblem])
+
+  useEffect(() => {
+    if (!selectedProblem || !selectedProblemAutoContinuationPlan || launchBusy) return
+    const attempted = autoContinuationAttemptRef.current.get(selectedProblem.id)
+    const now = Date.now()
+    if (
+      attempted &&
+      attempted.sourceRunId === selectedProblemAutoContinuationPlan.sourceRunId &&
+      attempted.nextRetryAt > now
+    ) {
+      return
+    }
+
+    autoContinuationAttemptRef.current.set(selectedProblem.id, {
+      sourceRunId: selectedProblemAutoContinuationPlan.sourceRunId,
+      nextRetryAt: Number.POSITIVE_INFINITY,
+    })
+
+    void launchProblemSwarm(selectedProblem.id, {
+      objectiveOverride: selectedProblemAutoContinuationPlan.objective,
+      templateOverride: selectedProblemAutoContinuationPlan.template,
+      quiet: true,
+      continuationSourceRunId: selectedProblemAutoContinuationPlan.sourceRunId,
+      continuationReason: selectedProblemAutoContinuationPlan.reason,
+    }).then((ok) => {
+      if (ok) return
+      autoContinuationAttemptRef.current.set(selectedProblem.id, {
+        sourceRunId: selectedProblemAutoContinuationPlan.sourceRunId,
+        nextRetryAt: Date.now() + 30_000,
+      })
+    })
+  }, [launchBusy, launchProblemSwarm, selectedProblem, selectedProblemAutoContinuationPlan])
 
   const stopCurrentSwarmRun = useCallback(async () => {
     if (!currentRunId) {
@@ -4077,6 +4167,7 @@ export default function BoardView({
             template={launchTemplate}
             templateOptions={SWARM_TEMPLATE_OPTIONS}
             objective={launchObjective}
+            autoContinuationEnabled={!!selectedProblem.autoContinuationEnabled}
             roomWidth={selectedProblemRoomWidth}
             roomHeight={selectedProblemRoomHeight}
             membranePad={selectedProblemEnvelopePad}
@@ -4177,6 +4268,13 @@ export default function BoardView({
             }}
             onTemplateChange={setSelectedProblemTemplate}
             onObjectiveChange={setLaunchObjective}
+            onAutoContinuationEnabledChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                autoContinuationEnabled: value,
+                lastAutoContinuationSourceRunId: value ? problem.lastAutoContinuationSourceRunId : undefined,
+              }))
+            }}
             onRoomWidthChange={(value) => {
               const nextWidth = clampNumber(value, 160, 720)
               updateSelectedProblemCard((problem) => ({

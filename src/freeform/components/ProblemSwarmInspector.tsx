@@ -64,6 +64,7 @@ type ProblemSwarmInspectorProps = {
   template: ButlerSwarmTemplate
   templateOptions: TemplateOption[]
   objective: string
+  autoContinuationEnabled: boolean
   roomWidth: number
   roomHeight: number
   membranePad: number
@@ -117,6 +118,7 @@ type ProblemSwarmInspectorProps = {
   onBriefChange: (value: BriefSpec) => void
   onTemplateChange: (value: ButlerSwarmTemplate) => void
   onObjectiveChange: (value: string) => void
+  onAutoContinuationEnabledChange: (value: boolean) => void
   onRoomWidthChange: (value: number) => void
   onRoomHeightChange: (value: number) => void
   onMembranePadChange: (value: number) => void
@@ -169,6 +171,7 @@ export function ProblemSwarmInspector({
   template,
   templateOptions,
   objective,
+  autoContinuationEnabled,
   roomWidth,
   roomHeight,
   membranePad,
@@ -222,6 +225,7 @@ export function ProblemSwarmInspector({
   onBriefChange,
   onTemplateChange,
   onObjectiveChange,
+  onAutoContinuationEnabledChange,
   onRoomWidthChange,
   onRoomHeightChange,
   onMembranePadChange,
@@ -674,6 +678,29 @@ export function ProblemSwarmInspector({
             Copy run brief
           </button>
         </div>
+      </div>
+
+      <div className="freeform-problem-inspector-section">
+        <div className="freeform-toolbar-panel-problem">
+          <div>
+            <h3>Loop control</h3>
+            <p>Let this room relaunch itself when Butler explicitly returns `continue`.</p>
+          </div>
+          <span className={`freeform-run-pill${autoContinuationEnabled ? ' is-active' : ''}`}>
+            {autoContinuationEnabled ? 'auto loop on' : 'manual loop'}
+          </span>
+        </div>
+        <label className="freeform-toggle-row">
+          <input
+            type="checkbox"
+            checked={autoContinuationEnabled}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => onAutoContinuationEnabledChange(e.target.checked)}
+          />
+          <span>Auto-continue this room from the latest Butler self-evaluation.</span>
+        </label>
+        <p className="freeform-toolbar-panel-hint">
+          When enabled, DewDrops Swarm OS relaunches the room after a completed Butler run only if the latest continuation decision is `continue`.
+        </p>
       </div>
 
       <div className="freeform-toolbar-panel-actions">

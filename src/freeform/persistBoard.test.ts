@@ -607,6 +607,21 @@ describe('briefSpec round-trip', () => {
     const board = parsePersistedBoardJson(minimalBoard([minimalProblemCard({ briefSpec: rawBriefSpec })]))
     expect(board?.cards[0]?.briefSpec?.autonomyPolicy).toBe('full-auto')
   })
+
+  it('parses persisted auto-continuation metadata for problem rooms', () => {
+    const board = parsePersistedBoardJson(
+      minimalBoard([
+        minimalProblemCard({
+          autoContinuationEnabled: true,
+          lastAutoContinuationSourceRunId: 'run-continue-1',
+        }),
+      ]),
+    )
+
+    const card = board?.cards[0]
+    expect(card?.autoContinuationEnabled).toBe(true)
+    expect(card?.lastAutoContinuationSourceRunId).toBe('run-continue-1')
+  })
 })
 
 describe('briefCompartmentAssets round-trip', () => {

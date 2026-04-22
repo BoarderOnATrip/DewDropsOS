@@ -583,4 +583,50 @@ describe('BoardView', () => {
 
     expect(screen.getByDisplayValue('Harness mission')).toBeInTheDocument()
   })
+
+  it('lets the operator enable auto-continuation for a problem room', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-auto-continuation-toggle"
+        bootState={{
+          camera: { x: 0, y: 0, zoom: 0.9 },
+          cards: [
+            problemCard({
+              autoContinuationEnabled: false,
+              briefSpec: {
+                id: 'brief-problem-1',
+                creative: {
+                  mission: 'Loop the room.',
+                  beneficiary: 'Operators',
+                  references: [],
+                },
+                execution: {
+                  task: 'Build the room.',
+                  acceptanceCriteria: [],
+                  scope: { in: [], out: [] },
+                  antiPatterns: [],
+                  deliverables: [],
+                },
+                escalationPolicy: 'outcome-contradiction-only',
+                autonomyPolicy: 'full-auto',
+              },
+            }),
+          ],
+          wires: [],
+        }}
+        focusedProblemId="problem-1"
+      />,
+    )
+
+    const toggle = screen.getByRole('checkbox', {
+      name: /Auto-continue this room from the latest Butler self-evaluation./i,
+    })
+    expect(toggle).not.toBeChecked()
+
+    await user.click(toggle)
+
+    expect(toggle).toBeChecked()
+  })
 })

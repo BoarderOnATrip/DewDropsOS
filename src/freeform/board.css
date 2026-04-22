@@ -952,6 +952,19 @@
   padding-top: 2px;
 }
 
+.freeform-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: rgba(235, 241, 247, 0.9);
+}
+
+.freeform-toggle-row input {
+  margin-top: 2px;
+}
+
 .freeform-problem-inspector-report {
   margin: 0;
   font-size: 0.74rem;

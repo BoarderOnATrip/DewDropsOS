@@ -214,6 +214,10 @@ export type WorkflowCard = {
   lastSwarmContractId?: string
   /** Problem only: latest Butler swarm run launched from this board object */
   lastSwarmRunId?: string
+  /** Problem only: whether Butler runs should auto-continue when the latest self-eval returns `continue` */
+  autoContinuationEnabled?: boolean
+  /** Problem only: latest Butler run id that already triggered an automatic continuation */
+  lastAutoContinuationSourceRunId?: string
   /** Problem only: selected capability profile from the catalog */
   capabilityProfileId?: string
   /** Problem only: selected capability pack that binds profile, recipe, and launch defaults */

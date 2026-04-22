@@ -564,6 +564,10 @@ export function parsePersistedBoardJson(raw: unknown): PersistedBoardV1 | null {
     if (isStr(w.butlerRoomId)) card.butlerRoomId = w.butlerRoomId
     if (isStr(w.lastSwarmContractId)) card.lastSwarmContractId = w.lastSwarmContractId
     if (isStr(w.lastSwarmRunId)) card.lastSwarmRunId = w.lastSwarmRunId
+    if (isBool(w.autoContinuationEnabled)) card.autoContinuationEnabled = w.autoContinuationEnabled
+    if (isStr(w.lastAutoContinuationSourceRunId)) {
+      card.lastAutoContinuationSourceRunId = w.lastAutoContinuationSourceRunId
+    }
     if (isStr(w.capabilityProfileId)) card.capabilityProfileId = w.capabilityProfileId
     if (isStr(w.capabilityPackId)) card.capabilityPackId = w.capabilityPackId
     if (isStr(w.swarmRecipeId)) card.swarmRecipeId = w.swarmRecipeId
