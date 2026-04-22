@@ -167,6 +167,9 @@ export type BriefCompartmentAsset = {
   organizeStatus: BriefCompartmentAssetStatus
   organizeReason?: string
   matchedLocusId?: string
+  sourceRunId?: string
+  sourceArtifactId?: string
+  sourcePath?: string
 }
 
 export type WorkflowCard = {

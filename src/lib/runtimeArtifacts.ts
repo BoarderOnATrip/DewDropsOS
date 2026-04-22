@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, extname, isAbsolute, posix, relative, resolve } from 'node:path'
 import type { RuntimeSessionArtifact, RuntimeSessionArtifactKind, RuntimeSessionRecord } from './runtimeSessionTypes'
 
@@ -8,6 +8,11 @@ const MAX_WALK_DEPTH = 6
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'])
 const TRACE_EXTENSIONS = new Set(['.zip', '.trace'])
 const REPORT_EXTENSIONS = new Set(['.html', '.xml', '.json', '.md', '.txt', '.log'])
+
+export type RuntimeSessionArtifactContent = {
+  artifact: RuntimeSessionArtifact
+  body: Buffer
+}
 
 function quotePosix(value: string): string {
   if (!value) return "''"
@@ -250,6 +255,57 @@ function describeRemoteArtifact(relativePath: string): RuntimeSessionArtifact {
   }
 }
 
+async function readRemoteArtifactContent(
+  session: RuntimeSessionRecord,
+  relativePath: string,
+): Promise<Buffer> {
+  const hostAlias = session.env?.DEWDROPS_RUNTIME_VPN_ALIAS?.trim()
+  if (!hostAlias) {
+    throw new Error('Remote DewDrop host is missing.')
+  }
+
+  const script = [`cd ${quotePosix(session.cwd)}`, `cat ${quotePosix(relativePath)}`].join('; ')
+  return new Promise<Buffer>((resolvePromise, rejectPromise) => {
+    const chunks: Buffer[] = []
+    const child = spawn(
+      'ssh',
+      [
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=4',
+        '-o',
+        'StrictHostKeyChecking=accept-new',
+        hostAlias,
+        'sh',
+        '-lc',
+        script,
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    )
+    const timeoutHandle = setTimeout(() => {
+      child.kill('SIGKILL')
+      rejectPromise(new Error('Timed out reading the remote DewDrop artifact.'))
+    }, 8000)
+
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    })
+    child.on('error', (error) => {
+      clearTimeout(timeoutHandle)
+      rejectPromise(error)
+    })
+    child.on('exit', (code) => {
+      clearTimeout(timeoutHandle)
+      if (code !== 0) {
+        rejectPromise(new Error(`SSH exited with code ${code ?? 'unknown'} while reading the DewDrop artifact.`))
+        return
+      }
+      resolvePromise(Buffer.concat(chunks))
+    })
+  })
+}
+
 export async function listRuntimeArtifactsForSession(
   session: RuntimeSessionRecord,
 ): Promise<RuntimeSessionArtifact[]> {
@@ -261,4 +317,30 @@ export async function listRuntimeArtifactsForSession(
 
   const paths = await listLocalArtifactPaths(session)
   return Promise.all(paths.map((relativePath) => describeLocalArtifact(session, relativePath)))
+}
+
+export async function readRuntimeArtifactContentForSession(
+  session: RuntimeSessionRecord,
+  artifactId: string,
+): Promise<RuntimeSessionArtifactContent> {
+  const artifacts = await listRuntimeArtifactsForSession(session)
+  const artifact = artifacts.find((candidate) => candidate.id === artifactId)
+  if (!artifact) {
+    throw new Error('Artifact not found.')
+  }
+  const relativePath = artifact.path
+  if (!relativePath) {
+    throw new Error('Artifact path is missing.')
+  }
+
+  const route = session.env?.DEWDROPS_RUNTIME_ROUTE?.trim() || 'local'
+  const body =
+    route === 'vpn-ssh'
+      ? await readRemoteArtifactContent(session, relativePath)
+      : await readFile(resolve(session.cwd, relativePath))
+
+  return {
+    artifact,
+    body,
+  }
 }

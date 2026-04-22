@@ -376,6 +376,107 @@ describe('BoardView', () => {
     expect(screen.getAllByText(/Builder returned from hermes with status running/i).length).toBeGreaterThan(0)
   })
 
+  it('opens a DewDrop file artifact from the room ledger', async () => {
+    const user = userEvent.setup()
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(
+      <BoardView
+        bootId="board-open-artifact"
+        bootState={{
+          camera: { x: 0, y: 0, zoom: 0.9 },
+          cards: [
+            problemCard({
+              runLedger: [
+                {
+                  runId: 'dewdrop-session-1',
+                  contractId: 'dewdrop:agent-1',
+                  roomId: 'problem-1',
+                  title: 'Playwright return',
+                  status: 'done',
+                  startedAt: '2026-04-19T10:00:00.000Z',
+                  artifacts: [
+                    {
+                      id: 'playwright-shot',
+                      runId: 'dewdrop-session-1',
+                      kind: 'image',
+                      title: 'Screenshot accepted.png',
+                      summary: 'Screenshot artifact.',
+                      path: '.dewdrops-artifacts/agent-1/test-results/accepted.png',
+                      mimeType: 'image/png',
+                      sizeBytes: 256,
+                      createdAt: '2026-04-19T10:03:00.000Z',
+                    },
+                  ],
+                },
+              ],
+            }),
+          ],
+          wires: [],
+        }}
+        focusedProblemId="problem-1"
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open artifact' }))
+
+    expect(openSpy).toHaveBeenCalledWith(
+      '/api/runtime/sessions/session-1/artifacts/playwright-shot/file',
+      '_blank',
+      'noopener,noreferrer',
+    )
+    openSpy.mockRestore()
+  })
+
+  it('mirrors accepted DewDrop artifacts into the briefcase compartments', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-accept-artifact"
+        bootState={{
+          camera: { x: 0, y: 0, zoom: 0.9 },
+          cards: [
+            problemCard({
+              runLedger: [
+                {
+                  runId: 'dewdrop-session-1',
+                  contractId: 'dewdrop:agent-1',
+                  roomId: 'problem-1',
+                  title: 'Playwright return',
+                  status: 'done',
+                  startedAt: '2026-04-19T10:00:00.000Z',
+                  artifacts: [
+                    {
+                      id: 'playwright-shot',
+                      runId: 'dewdrop-session-1',
+                      kind: 'image',
+                      title: 'Screenshot accepted.png',
+                      summary: 'Screenshot artifact.',
+                      path: '.dewdrops-artifacts/agent-1/test-results/accepted.png',
+                      mimeType: 'image/png',
+                      sizeBytes: 256,
+                      createdAt: '2026-04-19T10:03:00.000Z',
+                      status: 'provisional',
+                    },
+                  ],
+                },
+              ],
+            }),
+          ],
+          wires: [],
+        }}
+        focusedProblemId="problem-1"
+      />,
+    )
+
+    expect(screen.getByText(/No intake materials indexed yet/i)).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: /Artifact review/i }), 'accepted')
+
+    expect(screen.getByText('accepted.png')).toBeInTheDocument()
+    expect(screen.queryByText(/No intake materials indexed yet/i)).not.toBeInTheDocument()
+  })
+
   it('persists mission edits made directly inside the briefcase harness', async () => {
     const user = userEvent.setup()
 

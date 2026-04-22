@@ -8,6 +8,7 @@ describe('RunLedgerPanel', () => {
     const user = userEvent.setup()
     const onSelectRun = vi.fn()
     const onArtifactStatusChange = vi.fn()
+    const onArtifactOpen = vi.fn()
 
     render(
       <RunLedgerPanel
@@ -29,6 +30,9 @@ describe('RunLedgerPanel', () => {
                 kind: 'report',
                 title: 'Launch report',
                 summary: 'Completed successfully.',
+                path: '.dewdrops-artifacts/agent-1/playwright-report/index.html',
+                mimeType: 'text/html',
+                sizeBytes: 1024,
                 createdAt: '2026-04-18T10:15:00.000Z',
               },
             ],
@@ -37,15 +41,19 @@ describe('RunLedgerPanel', () => {
         currentRunId="run-1"
         onSelectRun={onSelectRun}
         onArtifactStatusChange={onArtifactStatusChange}
+        onArtifactOpen={onArtifactOpen}
       />,
     )
 
     expect(screen.getByText('Launch room')).toBeInTheDocument()
     expect(screen.getByText('build-local')).toBeInTheDocument()
     expect(screen.getByText('report: Launch report')).toBeInTheDocument()
+    expect(screen.getByText(/\.dewdrops-artifacts\/agent-1\/playwright-report\/index\.html/)).toBeInTheDocument()
     expect(screen.getByText('provisional')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Launch room/ }))
     expect(onSelectRun).toHaveBeenCalledWith('run-1')
+    await user.click(screen.getByRole('button', { name: 'Open artifact' }))
+    expect(onArtifactOpen).toHaveBeenCalledWith('run-1', 'artifact-1')
     await user.selectOptions(screen.getByRole('combobox', { name: /Artifact review/i }), 'accepted')
     expect(onArtifactStatusChange).toHaveBeenCalledWith('run-1', 'artifact-1', 'accepted')
   })

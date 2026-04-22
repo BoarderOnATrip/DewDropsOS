@@ -58,6 +58,10 @@ export async function getWorkerTerminalHealth(): Promise<WorkerTerminalHealth> {
   return requestJson<WorkerTerminalHealth>('/health')
 }
 
+export function workerTerminalArtifactFileUrl(sessionId: string, artifactId: string): string {
+  return `${normalizeBaseUrl(DEFAULT_RUNTIME_BRIDGE_BASE)}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}/file`
+}
+
 export async function checkWorkerTerminalHost(hostAlias: string): Promise<RuntimeHostCheck> {
   return requestJson<RuntimeHostCheck>(`/hosts/${encodeURIComponent(hostAlias)}/check`)
 }

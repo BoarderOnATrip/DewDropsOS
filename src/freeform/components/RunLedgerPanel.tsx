@@ -9,6 +9,7 @@ export type RunLedgerPanelProps = {
   onSelectRun?: (runId: string) => void
   showArtifacts?: boolean
   onArtifactStatusChange?: (runId: string, artifactId: string, status: ArtifactStatus) => void
+  onArtifactOpen?: (runId: string, artifactId: string) => void
 }
 
 function formatArtifactLabel(artifact: RunArtifact): string {
@@ -45,6 +46,7 @@ export function RunLedgerPanel({
   onSelectRun,
   showArtifacts = true,
   onArtifactStatusChange,
+  onArtifactOpen,
 }: RunLedgerPanelProps) {
   return (
     <section className="freeform-problem-inspector-section" aria-label={title}>
@@ -117,6 +119,17 @@ export function RunLedgerPanel({
                         <span>{artifact.summary}</span>
                         {formatArtifactMeta(artifact) ? (
                           <span className="freeform-toolbar-panel-hint">{formatArtifactMeta(artifact)}</span>
+                        ) : null}
+                        {onArtifactOpen && artifact.path ? (
+                          <div className="freeform-toolbar-panel-actions">
+                            <button
+                              type="button"
+                              className="freeform-btn freeform-btn--tool"
+                              onClick={() => onArtifactOpen(entry.runId, artifact.id)}
+                            >
+                              Open artifact
+                            </button>
+                          </div>
                         ) : null}
                         {onArtifactStatusChange ? (
                           <label className="freeform-field">

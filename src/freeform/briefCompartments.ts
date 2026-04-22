@@ -1,4 +1,4 @@
-import type { BriefCompartmentAsset, BriefCompartmentKind, WorkflowCard } from './types'
+import type { BriefCompartmentAsset, BriefCompartmentKind, RunArtifact, WorkflowCard } from './types'
 import { buildVisualMemoryPalace } from './visualMemoryPalace'
 
 export type BriefCompartmentOption = {
@@ -141,6 +141,21 @@ function slugToken(input: string, fallback: string): string {
 function extensionFromName(name: string): string {
   const parts = name.trim().toLowerCase().split('.')
   return parts.length > 1 ? parts[parts.length - 1] ?? '' : ''
+}
+
+function fileNameFromPath(pathname: string): string {
+  const normalized = pathname.replace(/\\/g, '/').trim()
+  const parts = normalized.split('/')
+  return parts[parts.length - 1] ?? normalized
+}
+
+function artifactDisplayName(artifact: RunArtifact): string {
+  const baseName = artifact.path ? fileNameFromPath(artifact.path) : ''
+  const extension = artifact.path ? extensionFromName(artifact.path) : ''
+  const generic = baseName.toLowerCase() === 'index.html' || baseName.toLowerCase() === 'report.html'
+  if (baseName && !generic) return baseName
+  const titleSlug = slugToken(artifact.title, artifact.id)
+  return extension ? `${titleSlug}.${extension}` : titleSlug
 }
 
 function tokenize(raw: string): string[] {
@@ -408,6 +423,53 @@ export function createBriefCompartmentAsset(
     organizeStatus: bestStatus,
     organizeReason: bestReason,
     matchedLocusId: bestOption.locusId,
+  }
+}
+
+function preferredCompartmentKindForArtifact(kind: RunArtifact['kind']): BriefCompartmentKind {
+  if (kind === 'trace') return 'edit'
+  if (kind === 'image' || kind === 'download') return 'publish'
+  if (kind === 'report' || kind === 'plan' || kind === 'note' || kind === 'handoff') return 'reference'
+  return 'source'
+}
+
+export function createBriefCompartmentAssetFromRunArtifact(
+  problem: WorkflowCard,
+  artifact: RunArtifact,
+  options?: {
+    runId?: string
+    addedAt?: string
+    assetId?: string
+    compartmentOptions?: readonly BriefCompartmentOption[]
+  },
+): BriefCompartmentAsset {
+  const compartmentOptions = options?.compartmentOptions ?? buildBriefCompartmentOptions(problem)
+  const preferredKind = preferredCompartmentKindForArtifact(artifact.kind)
+  const targetOption =
+    compartmentOptions.find((option) => option.kind === preferredKind) ??
+    bestFallbackOption(compartmentOptions)
+  const name = artifactDisplayName(artifact)
+  const extension = extensionFromName(name) || extensionFromName(artifact.path ?? '') || undefined
+  const addedAt = options?.addedAt ?? artifact.createdAt
+  const slug = slugToken(`${targetOption.label}-${name}`, artifact.id)
+
+  return {
+    id: options?.assetId ?? `compartment-${slug}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    mimeType: artifact.mimeType ?? 'application/octet-stream',
+    sizeBytes: artifact.sizeBytes ?? artifact.content?.length ?? 0,
+    addedAt,
+    compartmentId: targetOption.id,
+    compartmentLabel: targetOption.label,
+    compartmentKind: targetOption.kind,
+    anchorRef: targetOption.anchorRef,
+    extension,
+    organizeStatus: 'sorted',
+    organizeReason: `Accepted ${artifact.kind} returned from the room ledger.`,
+    matchedLocusId: targetOption.locusId,
+    sourceRunId: options?.runId,
+    sourceArtifactId: artifact.id,
+    sourcePath: artifact.path,
   }
 }
 

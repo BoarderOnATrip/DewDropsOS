@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildBriefCompartmentOptions, collectProblemAnchorRefs, createBriefCompartmentAsset } from './briefCompartments'
+import {
+  buildBriefCompartmentOptions,
+  collectProblemAnchorRefs,
+  createBriefCompartmentAsset,
+  createBriefCompartmentAssetFromRunArtifact,
+} from './briefCompartments'
 import type { WorkflowCard } from './types'
 
 function problem(overrides: Partial<WorkflowCard> = {}): WorkflowCard {
@@ -123,5 +128,35 @@ describe('briefCompartments', () => {
         'social/instagram-reels',
       ]),
     )
+  })
+
+  it('mirrors accepted run artifacts into stable briefcase assets', () => {
+    const asset = createBriefCompartmentAssetFromRunArtifact(
+      problem(),
+      {
+        id: 'playwright-shot',
+        runId: 'dewdrop-session-1',
+        kind: 'image',
+        title: 'Screenshot accepted.png',
+        summary: 'Accepted screenshot.',
+        path: '.dewdrops-artifacts/agent-1/test-results/accepted.png',
+        mimeType: 'image/png',
+        sizeBytes: 256,
+        createdAt: '2026-04-19T12:00:00.000Z',
+        status: 'accepted',
+      },
+      {
+        runId: 'dewdrop-session-1',
+        assetId: 'compartment-mirror-1',
+      },
+    )
+
+    expect(asset.id).toBe('compartment-mirror-1')
+    expect(asset.name).toBe('accepted.png')
+    expect(asset.compartmentKind).toBe('publish')
+    expect(asset.organizeStatus).toBe('sorted')
+    expect(asset.sourceRunId).toBe('dewdrop-session-1')
+    expect(asset.sourceArtifactId).toBe('playwright-shot')
+    expect(asset.sourcePath).toBe('.dewdrops-artifacts/agent-1/test-results/accepted.png')
   })
 })

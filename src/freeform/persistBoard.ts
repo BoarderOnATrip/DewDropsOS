@@ -227,6 +227,9 @@ function parseBriefCompartmentAsset(raw: unknown): BriefCompartmentAsset | null 
   if (isStr(asset.extension)) parsed.extension = asset.extension
   if (isStr(asset.organizeReason)) parsed.organizeReason = asset.organizeReason
   if (isStr(asset.matchedLocusId)) parsed.matchedLocusId = asset.matchedLocusId
+  if (isStr(asset.sourceRunId)) parsed.sourceRunId = asset.sourceRunId
+  if (isStr(asset.sourceArtifactId)) parsed.sourceArtifactId = asset.sourceArtifactId
+  if (isStr(asset.sourcePath)) parsed.sourcePath = asset.sourcePath
   return parsed
 }
 

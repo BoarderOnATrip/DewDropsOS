@@ -8,7 +8,7 @@ import type {
   RuntimeBridgeHealth,
   RuntimeSessionRecord,
 } from './runtimeSessionTypes'
-import { listRuntimeArtifactsForSession } from './runtimeArtifacts'
+import { listRuntimeArtifactsForSession, readRuntimeArtifactContentForSession } from './runtimeArtifacts'
 
 const ANSI_ESCAPE_PATTERN = new RegExp(
   `${String.fromCharCode(27)}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])`,
@@ -213,6 +213,17 @@ export class RuntimeSessionStore {
       throw new Error('Session not found.')
     }
     return listRuntimeArtifactsForSession(snapshot(session))
+  }
+
+  async readSessionArtifact(
+    sessionId: string,
+    artifactId: string,
+  ): Promise<{ artifact: RuntimeSessionArtifact; body: Buffer }> {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      throw new Error('Session not found.')
+    }
+    return readRuntimeArtifactContentForSession(snapshot(session), artifactId)
   }
 
   createSession(input: CreateRuntimeSessionInput): RuntimeSessionRecord {

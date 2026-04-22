@@ -109,6 +109,23 @@ function sendText(res: ServerResponse, statusCode: number, body: string): void {
   res.end(body)
 }
 
+function sendBuffer(
+  res: ServerResponse,
+  statusCode: number,
+  body: Buffer,
+  options?: { contentType?: string; filename?: string },
+): void {
+  res.statusCode = statusCode
+  if (options?.contentType) {
+    res.setHeader('Content-Type', options.contentType)
+  }
+  if (options?.filename) {
+    res.setHeader('Content-Disposition', `inline; filename="${options.filename.replace(/"/g, '')}"`)
+  }
+  res.setHeader('Content-Length', body.byteLength)
+  res.end(body)
+}
+
 function matchPath(urlPath: string, prefix: string): string | null {
   if (!urlPath.startsWith(prefix)) return null
   const remainder = urlPath.slice(prefix.length)
@@ -335,7 +352,7 @@ function createRuntimeBridgeHandler(rootDir: string) {
       sendText(res, 404, 'Not found')
       return
     }
-    const [sessionId, action] = sessionPath.split('/').filter(Boolean)
+    const [sessionId, action, artifactId, artifactAction] = sessionPath.split('/').filter(Boolean)
     if (!sessionId) {
       sendText(res, 404, 'Not found')
       return
@@ -348,6 +365,24 @@ function createRuntimeBridgeHandler(rootDir: string) {
         return
       }
       sendJson(res, 200, session)
+      return
+    }
+
+    if (req.method === 'GET' && action === 'artifacts' && artifactId && artifactAction === 'file') {
+      try {
+        const { artifact, body } = await store.readSessionArtifact(sessionId, decodeURIComponent(artifactId))
+        sendBuffer(res, 200, body, {
+          contentType: artifact.mimeType ?? 'application/octet-stream',
+          filename: artifact.path?.split('/').pop() ?? artifact.title,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not read runtime artifact.'
+        if (message === 'Session not found.' || message === 'Artifact not found.') {
+          sendJson(res, 404, { ok: false, error: message })
+          return
+        }
+        sendJson(res, 500, { ok: false, error: message })
+      }
       return
     }
 

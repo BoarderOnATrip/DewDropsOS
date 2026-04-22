@@ -73,6 +73,7 @@ import {
   createWorkerTerminalSession,
   getWorkerTerminalSession,
   type WorkerTerminalArtifact,
+  workerTerminalArtifactFileUrl,
   listWorkerTerminalSessionArtifacts,
   listWorkerTerminalSessions,
   resizeWorkerTerminalSession,
@@ -83,7 +84,11 @@ import {
 import { getDewDropHost, type DewDropHostStatus } from './dewdropHosts'
 import { applyCapabilityPack, getCapabilityPack, listCapabilityPacks, resolveCapabilityPackId, syncCapabilityPack } from './capabilityPacks'
 import { listCapabilityProfiles } from './capabilityProfiles'
-import { buildBriefCompartmentOptions, createBriefCompartmentAsset } from './briefCompartments'
+import {
+  buildBriefCompartmentOptions,
+  createBriefCompartmentAsset,
+  createBriefCompartmentAssetFromRunArtifact,
+} from './briefCompartments'
 import { DewDropTerminalCard } from './components/DewDropTerminalCard'
 import { ProblemSwarmInspector } from './components/ProblemSwarmInspector'
 import { SwarmEnvelopeLayer } from './components/SwarmEnvelopeLayer'
@@ -207,6 +212,46 @@ async function readTextFromClipboard(): Promise<string> {
     return navigator.clipboard.readText()
   }
   throw new Error('Clipboard reading is unavailable in this browser session.')
+}
+
+function findRunLedgerEntry(problem: WorkflowCard, runId: string) {
+  return problem.runLedger?.find((entry) => entry.runId === runId)
+}
+
+function findRunLedgerArtifact(problem: WorkflowCard, runId: string, artifactId: string) {
+  return findRunLedgerEntry(problem, runId)?.artifacts.find((artifact) => artifact.id === artifactId)
+}
+
+function syncMirroredBriefcaseArtifact(
+  problem: WorkflowCard,
+  runId: string,
+  artifactId: string,
+  status: ArtifactStatus,
+) {
+  const currentAssets = problem.briefCompartmentAssets ?? []
+  const existingMirror = currentAssets.find(
+    (asset) => asset.sourceRunId === runId && asset.sourceArtifactId === artifactId,
+  )
+  if (status !== 'accepted') {
+    const nextAssets = currentAssets.filter(
+      (asset) => !(asset.sourceRunId === runId && asset.sourceArtifactId === artifactId),
+    )
+    return nextAssets.length > 0 ? nextAssets : undefined
+  }
+
+  if (existingMirror) {
+    return currentAssets
+  }
+
+  const artifact = findRunLedgerArtifact(problem, runId, artifactId)
+  if (!artifact) {
+    return currentAssets.length > 0 ? currentAssets : undefined
+  }
+
+  const mirroredAsset = createBriefCompartmentAssetFromRunArtifact(problem, artifact, {
+    runId,
+  })
+  return [...currentAssets, mirroredAsset]
 }
 
 /** Default board = Hedgerows 2.0 Δ squad (virtual company preset). */
@@ -2112,6 +2157,48 @@ export default function BoardView({
       })
     }
   }, [])
+
+  const openSelectedProblemArtifact = useCallback((runId: string, artifactId: string) => {
+    const problem = cardsRef.current.find((card) => card.id === selectedProblemId && card.kind === 'problem')
+    if (!problem) return
+    const artifact = findRunLedgerArtifact(problem, runId, artifactId)
+    if (!artifact?.path) {
+      setBoardNotice({
+        text: 'This artifact does not expose an openable file path yet.',
+        tone: 'error',
+      })
+      return
+    }
+    if (!runId.startsWith('dewdrop-')) {
+      setBoardNotice({
+        text: 'Direct artifact opening is currently available for DewDrop-returned artifacts.',
+        tone: 'error',
+      })
+      return
+    }
+    const sessionId = runId.slice('dewdrop-'.length)
+    if (!sessionId) {
+      setBoardNotice({
+        text: 'The DewDrop session for this artifact could not be resolved.',
+        tone: 'error',
+      })
+      return
+    }
+    if (typeof window === 'undefined') return
+    window.open(workerTerminalArtifactFileUrl(sessionId, artifactId), '_blank', 'noopener,noreferrer')
+    setBoardNotice({
+      text: `Opened ${artifact.title}.`,
+      tone: 'ok',
+    })
+  }, [selectedProblemId])
+
+  const updateSelectedProblemArtifactStatus = useCallback((runId: string, artifactId: string, status: ArtifactStatus) => {
+    updateSelectedProblemCard((problem) => ({
+      ...problem,
+      runLedger: updateRunArtifactStatus(problem.runLedger, runId, artifactId, status),
+      briefCompartmentAssets: syncMirroredBriefcaseArtifact(problem, runId, artifactId, status),
+    }))
+  }, [updateSelectedProblemCard])
 
   const resizeWorkerTerminalAgent = useCallback(async (
     agentId: string,
@@ -4074,12 +4161,8 @@ export default function BoardView({
               void refreshRuns(false)
             }}
             onSelectRun={setCurrentRunId}
-            onArtifactStatusChange={(runId, artifactId, status) => {
-              updateSelectedProblemCard((problem) => ({
-                ...problem,
-                runLedger: updateRunArtifactStatus(problem.runLedger, runId, artifactId, status),
-              }))
-            }}
+            onArtifactStatusChange={updateSelectedProblemArtifactStatus}
+            onArtifactOpen={openSelectedProblemArtifact}
           />
         ) : selectedAgent ? (
           <aside className="freeform-problem-inspector" aria-label="Selected terminal inspector">

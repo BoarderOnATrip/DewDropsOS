@@ -139,6 +139,7 @@ type ProblemSwarmInspectorProps = {
   onRefreshRuns: () => void
   onSelectRun: (runId: string) => void
   onArtifactStatusChange: (runId: string, artifactId: string, status: ArtifactStatus) => void
+  onArtifactOpen: (runId: string, artifactId: string) => void
 }
 
 function reportPreview(content: string | undefined): string {
@@ -243,6 +244,7 @@ export function ProblemSwarmInspector({
   onRefreshRuns,
   onSelectRun,
   onArtifactStatusChange,
+  onArtifactOpen,
 }: ProblemSwarmInspectorProps) {
   const currentRun = runs.find((run) => run.id === currentRunId || run.run_id === currentRunId) ?? null
   const preview = reportPreview(currentRunReport?.content)
@@ -719,6 +721,7 @@ export function ProblemSwarmInspector({
         onSelectRun={onSelectRun}
         emptyText="Run ledger entries appear here after Butler returns summaries or reports."
         onArtifactStatusChange={onArtifactStatusChange}
+        onArtifactOpen={onArtifactOpen}
       />
 
       <ContinuationDecisionPanel

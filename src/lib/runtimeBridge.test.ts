@@ -79,9 +79,10 @@ async function invoke(
     nextCalled = true
   })
   const text = state.chunks.join('')
+  const contentType = String(state.headers['Content-Type'] ?? state.headers['content-type'] ?? '')
   return {
     status: state.statusCode,
-    body: text ? JSON.parse(text) : undefined,
+    body: text ? (contentType.includes('application/json') ? JSON.parse(text) : text) : undefined,
     nextCalled,
   }
 }
@@ -229,6 +230,16 @@ describe('runtimeBridgePlugin', () => {
         }),
       ]),
     )
+
+    const artifactFile = await invoke(
+      middleware,
+      `/api/runtime/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(
+        'dewdrops-artifacts-agent-1-playwright-report-index-html',
+      )}/file`,
+      'GET',
+    )
+    expect(artifactFile.status).toBe(200)
+    expect(artifactFile.nextCalled).toBe(false)
 
     await invoke(middleware, `/api/runtime/sessions/${encodeURIComponent(sessionId)}/kill`, 'POST')
   })
