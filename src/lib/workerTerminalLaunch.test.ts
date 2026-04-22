@@ -24,6 +24,7 @@ describe('buildWorkerTerminalLaunchPlan', () => {
     expect(plan.env).toMatchObject({
       DEWDROPS_RUNTIME_PROFILE: 'browser-harness',
       DEWDROPS_RUNTIME_ROUTE: 'local',
+      DEWDROPS_ARTIFACT_DIR: '.dewdrops-artifacts/agent-1',
     })
     expect(plan.launchFile).toBeUndefined()
   })
@@ -81,6 +82,33 @@ describe('buildWorkerTerminalLaunchPlan', () => {
     expect(plan.env).toMatchObject({
       DEWDROPS_RUNTIME_PROFILE: 'hermes',
       DEWDROPS_RUNTIME_ROUTE: 'local',
+    })
+  })
+
+  it('adds DewDrops-managed output routing for Playwright nodes', () => {
+    const plan = buildWorkerTerminalLaunchPlan({
+      agentId: 'agent-4',
+      title: 'Playwright node',
+      runtime: {
+        kind: 'terminal',
+        profile: 'playwright',
+        transport: 'cli',
+        instanceLabel: 'playwright-node',
+        command: 'npx playwright test',
+        workspaceRoot: '.',
+      },
+    })
+
+    expect(plan.route).toBe('local')
+    expect(plan.command).toContain('--output .dewdrops-artifacts/agent-4/test-results')
+    expect(plan.command).toContain('--reporter=line,html,junit')
+    expect(plan.command).toContain('--trace=retain-on-failure')
+    expect(plan.env).toMatchObject({
+      DEWDROPS_RUNTIME_PROFILE: 'playwright',
+      DEWDROPS_ARTIFACT_DIR: '.dewdrops-artifacts/agent-4',
+      DEWDROPS_PLAYWRIGHT_OUTPUT_DIR: '.dewdrops-artifacts/agent-4/test-results',
+      PLAYWRIGHT_HTML_OUTPUT_DIR: '.dewdrops-artifacts/agent-4/playwright-report',
+      PLAYWRIGHT_JUNIT_OUTPUT_FILE: '.dewdrops-artifacts/agent-4/playwright-junit.xml',
     })
   })
 })

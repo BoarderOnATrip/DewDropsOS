@@ -4,9 +4,11 @@ import { basename, resolve } from 'node:path'
 import { spawn as ptySpawn, type IPty } from 'node-pty'
 import type {
   CreateRuntimeSessionInput,
+  RuntimeSessionArtifact,
   RuntimeBridgeHealth,
   RuntimeSessionRecord,
 } from './runtimeSessionTypes'
+import { listRuntimeArtifactsForSession } from './runtimeArtifacts'
 
 const ANSI_ESCAPE_PATTERN = new RegExp(
   `${String.fromCharCode(27)}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])`,
@@ -203,6 +205,14 @@ export class RuntimeSessionStore {
   getSession(sessionId: string): RuntimeSessionRecord | null {
     const session = this.sessions.get(sessionId)
     return session ? snapshot(session) : null
+  }
+
+  async listSessionArtifacts(sessionId: string): Promise<RuntimeSessionArtifact[]> {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      throw new Error('Session not found.')
+    }
+    return listRuntimeArtifactsForSession(snapshot(session))
   }
 
   createSession(input: CreateRuntimeSessionInput): RuntimeSessionRecord {

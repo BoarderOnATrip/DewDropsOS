@@ -7,6 +7,18 @@ export type RuntimeSessionStatus =
   | 'failed'
   | 'killed'
 
+export type RuntimeSessionArtifactKind = 'report' | 'note' | 'image' | 'trace' | 'download'
+
+export type RuntimeSessionArtifact = {
+  id: string
+  kind: RuntimeSessionArtifactKind
+  title: string
+  summary: string
+  path: string
+  mimeType?: string
+  sizeBytes?: number
+}
+
 export type RuntimeBridgeHealth = {
   ok: boolean
   service: string

@@ -1,4 +1,5 @@
 import type { ButlerSwarmRun, ButlerSwarmRunReport } from '../lib/butlerBridge'
+import type { RuntimeSessionArtifact } from '../lib/runtimeSessionTypes'
 import type { BriefPacket } from './briefSpec'
 import { evaluateContinuation } from './continuationPolicy'
 import type { ArtifactStatus, RunArtifact, RunLedgerEntry, SelfEvaluation, WorkflowCard } from './types'
@@ -66,12 +67,20 @@ function dewdropRunId(agent: WorkflowCard): string {
   return sessionId ? `dewdrop-${sessionId}` : `dewdrop-${agent.id}`
 }
 
-function dewdropSummary(agent: WorkflowCard): string {
+function dewdropArtifactId(runId: string, artifactId: string): string {
+  return `${runId}-${artifactId}`
+}
+
+function dewdropSummary(agent: WorkflowCard, runtimeArtifacts: readonly RuntimeSessionArtifact[]): string {
   const runtime = agent.agentRuntime
   const logTail = runtime?.sessionState?.logTail ?? []
   const lastSignal = [...logTail].reverse().find((line) => line.trim()) ?? runtime?.sessionState?.currentTask ?? 'No output yet.'
   const status = runtime?.sessionState?.status ?? 'idle'
-  return `${agent.title} returned from ${dewdropRuntimeLabel(agent)} with status ${status}. ${lastSignal}`
+  const artifactSummary =
+    runtimeArtifacts.length > 0
+      ? `${runtimeArtifacts.length} artifact${runtimeArtifacts.length === 1 ? '' : 's'} returned. `
+      : ''
+  return `${agent.title} returned from ${dewdropRuntimeLabel(agent)} with status ${status}. ${artifactSummary}${lastSignal}`
 }
 
 function dewdropTranscript(agent: WorkflowCard): string {
@@ -116,6 +125,25 @@ function mergeArtifactStatuses(
     }
   }
   return [...nextById.values()]
+}
+
+function runArtifactFromRuntimeArtifact(
+  runId: string,
+  returnedAt: string,
+  artifact: RuntimeSessionArtifact,
+): RunArtifact {
+  return {
+    id: dewdropArtifactId(runId, artifact.id),
+    runId,
+    kind: artifact.kind,
+    title: artifact.title,
+    summary: artifact.summary,
+    createdAt: returnedAt,
+    path: artifact.path,
+    mimeType: artifact.mimeType,
+    sizeBytes: artifact.sizeBytes,
+    status: 'provisional',
+  }
 }
 
 export function buildRunLedgerEntry(
@@ -205,15 +233,17 @@ export function buildDewDropRunLedgerEntry(
     roomId: string
     existingEntry?: RunLedgerEntry
     returnedAt?: string
+    runtimeArtifacts?: RuntimeSessionArtifact[]
   },
 ): RunLedgerEntry {
   const runId = dewdropRunId(agent)
+  const runtimeArtifacts = options.runtimeArtifacts ?? []
   const returnedAt =
     options.returnedAt ??
     agent.agentRuntime?.sessionState?.lastHeartbeatAt ??
     agent.agentRuntime?.sessionState?.startedAt ??
     isoNow()
-  const summary = dewdropSummary(agent)
+  const summary = dewdropSummary(agent, runtimeArtifacts)
   const transcript = dewdropTranscript(agent)
   const status = agent.agentRuntime?.sessionState?.status ?? 'running'
   const summaryKind: RunArtifact['kind'] =
@@ -240,6 +270,7 @@ export function buildDewDropRunLedgerEntry(
         createdAt: returnedAt,
         status: 'provisional',
       },
+      ...runtimeArtifacts.map((artifact) => runArtifactFromRuntimeArtifact(runId, returnedAt, artifact)),
     ],
     options.existingEntry,
   )

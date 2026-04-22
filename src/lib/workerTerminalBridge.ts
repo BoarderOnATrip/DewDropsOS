@@ -5,6 +5,7 @@ import type {
 import type {
   CreateRuntimeSessionInput,
   ResizeRuntimeSessionInput,
+  RuntimeSessionArtifact,
   RuntimeBridgeHealth,
   RuntimeHostCheck,
   RuntimeSessionRecord,
@@ -13,6 +14,7 @@ import type {
 import { buildWorkerTerminalLaunchPlan } from './workerTerminalLaunch'
 
 export type WorkerTerminalSession = RuntimeSessionRecord
+export type WorkerTerminalArtifact = RuntimeSessionArtifact
 export type WorkerTerminalHealth = RuntimeBridgeHealth
 
 export type CreateWorkerTerminalSessionInput = {
@@ -75,6 +77,12 @@ export async function listWorkerTerminalSessions(options?: {
 
 export async function getWorkerTerminalSession(sessionId: string): Promise<WorkerTerminalSession> {
   return requestJson<WorkerTerminalSession>(`/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export async function listWorkerTerminalSessionArtifacts(
+  sessionId: string,
+): Promise<WorkerTerminalArtifact[]> {
+  return requestJson<WorkerTerminalArtifact[]>(`/sessions/${encodeURIComponent(sessionId)}/artifacts`)
 }
 
 export async function createWorkerTerminalSession(

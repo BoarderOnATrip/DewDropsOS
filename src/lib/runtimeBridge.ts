@@ -6,6 +6,7 @@ import { RuntimeSessionStore } from './runtimeSessionStore'
 import type {
   CreateRuntimeSessionInput,
   ResizeRuntimeSessionInput,
+  RuntimeSessionArtifact,
   RuntimeBridgeHealth,
   RuntimeHostCheck,
   RuntimeSessionRecord,
@@ -50,6 +51,10 @@ export function listRuntimeSessions(filters?: {
 
 export function getRuntimeSession(sessionId: string): Promise<RuntimeSessionRecord> {
   return requestJson<RuntimeSessionRecord>(`/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function listRuntimeSessionArtifacts(sessionId: string): Promise<RuntimeSessionArtifact[]> {
+  return requestJson<RuntimeSessionArtifact[]>(`/sessions/${encodeURIComponent(sessionId)}/artifacts`)
 }
 
 export function createRuntimeSession(input: CreateRuntimeSessionInput): Promise<RuntimeSessionRecord> {
@@ -343,6 +348,21 @@ function createRuntimeBridgeHandler(rootDir: string) {
         return
       }
       sendJson(res, 200, session)
+      return
+    }
+
+    if (req.method === 'GET' && action === 'artifacts') {
+      try {
+        const artifacts = await store.listSessionArtifacts(sessionId)
+        sendJson(res, 200, artifacts)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not list runtime artifacts.'
+        if (message === 'Session not found.') {
+          sendJson(res, 404, { ok: false, error: message })
+          return
+        }
+        sendJson(res, 500, { ok: false, error: message })
+      }
       return
     }
 

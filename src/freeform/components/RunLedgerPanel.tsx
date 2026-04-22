@@ -27,6 +27,15 @@ function artifactStatusTone(status: ArtifactStatus | undefined): string {
   return ''
 }
 
+function formatArtifactMeta(artifact: RunArtifact): string | null {
+  const parts = [
+    artifact.path,
+    typeof artifact.sizeBytes === 'number' ? `${artifact.sizeBytes} bytes` : null,
+    artifact.mimeType ?? null,
+  ].filter((value): value is string => Boolean(value))
+  return parts.length > 0 ? parts.join(' • ') : null
+}
+
 export function RunLedgerPanel({
   entries,
   title = 'Run ledger',
@@ -106,6 +115,9 @@ export function RunLedgerPanel({
                           </span>
                         </div>
                         <span>{artifact.summary}</span>
+                        {formatArtifactMeta(artifact) ? (
+                          <span className="freeform-toolbar-panel-hint">{formatArtifactMeta(artifact)}</span>
+                        ) : null}
                         {onArtifactStatusChange ? (
                           <label className="freeform-field">
                             <span>Artifact review</span>

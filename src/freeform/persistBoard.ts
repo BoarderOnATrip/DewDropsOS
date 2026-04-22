@@ -142,7 +142,16 @@ function isKind(k: unknown): k is WorkflowCard['kind'] {
 }
 
 function isRunArtifactKind(k: unknown): k is RunArtifactKind {
-  return k === 'report' || k === 'plan' || k === 'note' || k === 'error' || k === 'handoff'
+  return (
+    k === 'report' ||
+    k === 'plan' ||
+    k === 'note' ||
+    k === 'error' ||
+    k === 'handoff' ||
+    k === 'image' ||
+    k === 'trace' ||
+    k === 'download'
+  )
 }
 
 function isArtifactStatus(s: unknown): s is ArtifactStatus {
@@ -227,6 +236,9 @@ function parseRunArtifact(raw: unknown): RunArtifact | null {
   if (!isStr(a.id) || !isStr(a.runId) || !isRunArtifactKind(a.kind) || !isStr(a.title) || !isStr(a.summary) || !isStr(a.createdAt)) return null
   const artifact: RunArtifact = { id: a.id, runId: a.runId, kind: a.kind, title: a.title, summary: a.summary, createdAt: a.createdAt }
   if (isStr(a.content)) artifact.content = a.content
+  if (isStr(a.path)) artifact.path = a.path
+  if (isStr(a.mimeType)) artifact.mimeType = a.mimeType
+  if (isNum(a.sizeBytes)) artifact.sizeBytes = a.sizeBytes
   if (isArtifactStatus(a.status)) artifact.status = a.status
   return artifact
 }

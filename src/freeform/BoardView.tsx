@@ -72,6 +72,8 @@ import {
   checkWorkerTerminalHost,
   createWorkerTerminalSession,
   getWorkerTerminalSession,
+  type WorkerTerminalArtifact,
+  listWorkerTerminalSessionArtifacts,
   listWorkerTerminalSessions,
   resizeWorkerTerminalSession,
   sendWorkerTerminalSessionInput,
@@ -2046,7 +2048,7 @@ export default function BoardView({
     }
   }, [])
 
-  const returnWorkerTerminalArtifact = useCallback((
+  const returnWorkerTerminalArtifact = useCallback(async (
     agentId: string,
     options?: { quiet?: boolean },
   ) => {
@@ -2063,6 +2065,16 @@ export default function BoardView({
       return
     }
 
+    let runtimeArtifacts: WorkerTerminalArtifact[] = []
+    const sessionId = agent.agentRuntime?.sessionState?.sessionId
+    if (sessionId) {
+      try {
+        runtimeArtifacts = await listWorkerTerminalSessionArtifacts(sessionId)
+      } catch {
+        runtimeArtifacts = []
+      }
+    }
+
     let changed = false
     setCards((list) => {
       let next = list
@@ -2074,6 +2086,7 @@ export default function BoardView({
         const nextEntry = buildDewDropRunLedgerEntry(agent, {
           roomId: card.id,
           existingEntry,
+          runtimeArtifacts,
         })
         if (existingEntry && JSON.stringify(existingEntry) === JSON.stringify(nextEntry)) {
           return list
@@ -2166,7 +2179,7 @@ export default function BoardView({
       const key = `${agent.id}:${sessionId}`
       if (returnedDewDropRunSignaturesRef.current.get(key) === signature) continue
       returnedDewDropRunSignaturesRef.current.set(key, signature)
-      returnWorkerTerminalArtifact(agent.id, { quiet: true })
+      void returnWorkerTerminalArtifact(agent.id, { quiet: true })
     }
   }, [cards, isJsdomRuntime, returnWorkerTerminalArtifact])
 

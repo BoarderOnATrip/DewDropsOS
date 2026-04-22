@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ButlerSwarmRun } from '../lib/butlerBridge'
+import type { RuntimeSessionArtifact } from '../lib/runtimeSessionTypes'
 import type { BriefPacket } from './briefSpec'
 import {
   buildDewDropRunLedgerEntry,
@@ -248,6 +249,61 @@ describe('buildDewDropRunLedgerEntry', () => {
     expect(entry.artifacts[1]?.title).toBe('Builder transcript')
     expect(entry.artifacts[1]?.content).toContain('# Builder return')
     expect(entry.artifacts[1]?.content).toContain('build complete')
+  })
+
+  it('includes returned browser and Playwright files as room artifacts', () => {
+    const runtimeArtifacts: RuntimeSessionArtifact[] = [
+      {
+        id: 'playwright-html-report',
+        kind: 'report',
+        title: 'Playwright HTML report',
+        summary: '.dewdrops-artifacts/agent-1/playwright-report/index.html • 1024 bytes',
+        path: '.dewdrops-artifacts/agent-1/playwright-report/index.html',
+        mimeType: 'text/html',
+        sizeBytes: 1024,
+      },
+      {
+        id: 'failure-shot',
+        kind: 'image',
+        title: 'Screenshot failure.png',
+        summary: '.dewdrops-artifacts/agent-1/test-results/failure.png • 256 bytes',
+        path: '.dewdrops-artifacts/agent-1/test-results/failure.png',
+        mimeType: 'image/png',
+        sizeBytes: 256,
+      },
+    ]
+
+    const entry = buildDewDropRunLedgerEntry(
+      dewdropAgent({
+        agentRuntime: {
+          ...dewdropAgent().agentRuntime!,
+          profile: 'playwright',
+          command: 'npx playwright test',
+        },
+      }),
+      {
+        roomId: 'room-1',
+        runtimeArtifacts,
+      },
+    )
+
+    expect(entry.artifacts).toHaveLength(4)
+    expect(entry.artifacts[0]?.summary).toContain('2 artifacts returned')
+    expect(entry.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'report',
+          title: 'Playwright HTML report',
+          path: '.dewdrops-artifacts/agent-1/playwright-report/index.html',
+          mimeType: 'text/html',
+        }),
+        expect.objectContaining({
+          kind: 'image',
+          path: '.dewdrops-artifacts/agent-1/test-results/failure.png',
+          sizeBytes: 256,
+        }),
+      ]),
+    )
   })
 })
 

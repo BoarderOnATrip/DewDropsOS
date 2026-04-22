@@ -3,7 +3,7 @@ import type { BriefSpec } from './briefSpec'
 /** Problem = swarm target; agent = summonable unit; surface = generic board note */
 export type CardKind = 'problem' | 'agent' | 'surface'
 
-export type RunArtifactKind = 'report' | 'plan' | 'note' | 'error' | 'handoff'
+export type RunArtifactKind = 'report' | 'plan' | 'note' | 'error' | 'handoff' | 'image' | 'trace' | 'download'
 
 // Artifact-level acceptance state. Acceptance is per-artifact, not per-run.
 export type ArtifactStatus = 'provisional' | 'accepted' | 'rejected'
@@ -15,6 +15,9 @@ export type RunArtifact = {
   title: string
   summary: string
   content?: string
+  path?: string
+  mimeType?: string
+  sizeBytes?: number
   createdAt: string
   status?: ArtifactStatus
 }

@@ -1,5 +1,6 @@
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdtempSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -180,5 +181,55 @@ describe('runtimeBridgePlugin', () => {
       route: 'local',
       ok: true,
     })
+  })
+
+  it('lists discovered session artifacts from the runtime middleware', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'dewdrops-runtime-'))
+    await mkdir(join(rootDir, '.dewdrops-artifacts', 'agent-1', 'playwright-report'), { recursive: true })
+    await writeFile(
+      join(rootDir, '.dewdrops-artifacts', 'agent-1', 'playwright-report', 'index.html'),
+      '<html>report</html>',
+      'utf8',
+    )
+    const middleware = installMiddleware(rootDir)
+
+    const command = `${JSON.stringify(process.execPath)} -e "setTimeout(() => {}, 5000)"`
+    const created = await invoke(
+      middleware,
+      '/api/runtime/sessions',
+      'POST',
+      JSON.stringify({
+        label: 'playwright-worker',
+        command,
+        agentId: 'agent-1',
+        cwd: rootDir,
+        env: {
+          DEWDROPS_RUNTIME_PROFILE: 'playwright',
+          DEWDROPS_RUNTIME_ROUTE: 'local',
+          DEWDROPS_ARTIFACT_DIR: '.dewdrops-artifacts/agent-1',
+          PLAYWRIGHT_HTML_OUTPUT_DIR: '.dewdrops-artifacts/agent-1/playwright-report',
+        },
+      }),
+    )
+    expect(created.status).toBe(201)
+    const sessionId = (created.body as { id: string }).id
+
+    const artifacts = await invoke(
+      middleware,
+      `/api/runtime/sessions/${encodeURIComponent(sessionId)}/artifacts`,
+      'GET',
+    )
+    expect(artifacts.status).toBe(200)
+    expect(artifacts.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'report',
+          title: 'Playwright HTML report',
+          path: '.dewdrops-artifacts/agent-1/playwright-report/index.html',
+        }),
+      ]),
+    )
+
+    await invoke(middleware, `/api/runtime/sessions/${encodeURIComponent(sessionId)}/kill`, 'POST')
   })
 })
