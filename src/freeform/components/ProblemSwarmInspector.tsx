@@ -5,6 +5,7 @@ import type {
   ButlerSwarmRunReport,
   ButlerSwarmTemplate,
 } from '../../lib/butlerBridge'
+import type { DewDropHostStatus } from '../dewdropHosts'
 import type { BriefSpec } from '../briefSpec'
 import type { BriefCompartmentOption } from '../briefCompartments'
 import type { SessionReadinessItem, SessionReadinessTone } from '../sessionReadiness'
@@ -86,6 +87,11 @@ type ProblemSwarmInspectorProps = {
   onWorkerTerminalStop: (agentId: string) => void
   onWorkerTerminalRefresh: (agentId: string) => void
   onWorkerTerminalSendInput: (agentId: string, input: string) => void
+  onWorkerTerminalCheckHost: (agentId: string, hostAlias: string) => void
+  onWorkerTerminalRelayClipboard: (agentId: string) => void
+  onWorkerTerminalCopyShell: (agentId: string, command: string) => void
+  onWorkerTerminalCopyBootstrap: (agentId: string, bootstrapText: string) => void
+  workerHostStatusByAlias: Record<string, DewDropHostStatus>
   workerTerminalBusyIds: readonly string[]
   phoneBrief: string
   desktopBrief: string
@@ -184,6 +190,11 @@ export function ProblemSwarmInspector({
   onWorkerTerminalStop,
   onWorkerTerminalRefresh,
   onWorkerTerminalSendInput,
+  onWorkerTerminalCheckHost,
+  onWorkerTerminalRelayClipboard,
+  onWorkerTerminalCopyShell,
+  onWorkerTerminalCopyBootstrap,
+  workerHostStatusByAlias,
   workerTerminalBusyIds,
   phoneBrief,
   desktopBrief,
@@ -531,6 +542,15 @@ export function ProblemSwarmInspector({
             onStop={onWorkerTerminalStop}
             onRefresh={onWorkerTerminalRefresh}
             onSendInput={onWorkerTerminalSendInput}
+            onCheckHost={onWorkerTerminalCheckHost}
+            onRelayClipboard={onWorkerTerminalRelayClipboard}
+            onCopyShell={onWorkerTerminalCopyShell}
+            onCopyBootstrap={onWorkerTerminalCopyBootstrap}
+            hostStatusOverride={
+              selectedAgent.agentRuntime?.vpnAlias?.trim()
+                ? workerHostStatusByAlias[selectedAgent.agentRuntime.vpnAlias.trim()]
+                : undefined
+            }
             autoFocusInput
           />
         </section>
@@ -546,6 +566,11 @@ export function ProblemSwarmInspector({
           onStop={onWorkerTerminalStop}
           onRefresh={onWorkerTerminalRefresh}
           onSendInput={onWorkerTerminalSendInput}
+          onCheckHost={onWorkerTerminalCheckHost}
+          onRelayClipboard={onWorkerTerminalRelayClipboard}
+          onCopyShell={onWorkerTerminalCopyShell}
+          onCopyBootstrap={onWorkerTerminalCopyBootstrap}
+          hostStatusByAlias={workerHostStatusByAlias}
         />
       ) : null}
 

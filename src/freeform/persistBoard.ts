@@ -375,9 +375,13 @@ function parseAgentRuntime(raw: unknown): AgentRuntimeBinding | null {
   const isTransport = (value: unknown): value is AgentRuntimeTransport => value === 'cli' || value === 'api'
   const isProfile = (value: unknown): value is AgentRuntimeProfile =>
     value === 'openclaw' ||
+    value === 'hermes' ||
     value === 'codex' ||
     value === 'claude-code' ||
     value === 'paperclip' ||
+    value === 'browser-harness' ||
+    value === 'browser-harness-js' ||
+    value === 'playwright' ||
     value === 'custom'
   const isApprovalGate = (value: unknown): value is DewDropSessionApprovalGate =>
     value === 'destructive' || value === 'external_network' || value === 'privileged'

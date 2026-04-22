@@ -1,4 +1,17 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import {
+  DEWDROP_RUNTIME_PROFILE_OPTIONS,
+  defaultCommandForRuntimeProfile,
+  pickerRuntimeProfile,
+  runtimeProfileLabel,
+} from '../agentRuntime'
+import { buildDewDropBootstrapPlan, dewDropRouteLabel } from '../dewdropBootstrap'
+import {
+  type DewDropHostStatus,
+  describeDewDropHostStatus,
+  getDewDropHost,
+  listDewDropHostSuggestions,
+} from '../dewdropHosts'
 import type { AgentRuntimeBinding, DewDropSessionStatus, WorkflowCard } from '../types'
 
 type DewDropTerminalCardProps = {
@@ -9,6 +22,11 @@ type DewDropTerminalCardProps = {
   onStop: (agentId: string) => void
   onRefresh: (agentId: string) => void
   onSendInput?: (agentId: string, input: string) => void
+  onCheckHost?: (agentId: string, hostAlias: string) => void
+  onRelayClipboard?: (agentId: string) => void
+  onCopyShell?: (agentId: string, command: string) => void
+  onCopyBootstrap?: (agentId: string, bootstrapText: string) => void
+  hostStatusOverride?: DewDropHostStatus
   busy?: boolean
   autoFocusInput?: boolean
 }
@@ -32,6 +50,11 @@ export function DewDropTerminalCard({
   onStop,
   onRefresh,
   onSendInput,
+  onCheckHost,
+  onRelayClipboard,
+  onCopyShell,
+  onCopyBootstrap,
+  hostStatusOverride,
   busy = false,
   autoFocusInput = false,
 }: DewDropTerminalCardProps) {
@@ -48,9 +71,19 @@ export function DewDropTerminalCard({
     !!runtime?.sessionState?.sessionId && ['running', 'blocked'].includes(runtime?.sessionState?.status ?? '')
   const assignmentLabel = agent.parentAgentId ? 'Nested terminal.' : agent.assignedToProblemId ? 'Room terminal.' : 'Free terminal.'
   const startLabel = canStop ? 'Restart' : 'Start'
+  const runtimeProfile = pickerRuntimeProfile(runtime?.profile)
   const shellCommand = runtime?.command ?? 'zsh -i -f'
   const workspaceRoot = runtime?.workspaceRoot ?? '.'
+  const hostAlias = runtime?.vpnAlias ?? ''
   const sessionId = runtime?.sessionState?.sessionId ?? null
+  const routeLabel = dewDropRouteLabel(runtime)
+  const bootstrapPlan = buildDewDropBootstrapPlan(runtime)
+  const hostStatus = hostStatusOverride ?? describeDewDropHostStatus(runtime)
+  const hostRecord = getDewDropHost(hostAlias)
+  const hostSuggestions = listDewDropHostSuggestions(runtime)
+  const hostListId = `${agent.id}-host-suggestions`
+  const hostInputId = `${agent.id}-host`
+  const bootstrapText = bootstrapPlan?.commands.join('\n') ?? ''
 
   useEffect(() => {
     if (!autoFocusInput || !canSendInput || !sessionId) return
@@ -80,6 +113,26 @@ export function DewDropTerminalCard({
           </label>
         ) : null}
         <label className="freeform-field">
+          <span>Runtime</span>
+          <select
+            aria-label="Runtime"
+            value={runtimeProfile}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+              const profile = event.target.value as typeof runtimeProfile
+              onRuntimeChange(agent.id, {
+                profile,
+                command: defaultCommandForRuntimeProfile(profile),
+              })
+            }}
+          >
+            {DEWDROP_RUNTIME_PROFILE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="freeform-field">
           <span>Shell</span>
           <input
             type="text"
@@ -101,13 +154,54 @@ export function DewDropTerminalCard({
             placeholder="."
           />
         </label>
+        <label className="freeform-field" htmlFor={hostInputId}>
+          <span>Host</span>
+          <input
+            id={hostInputId}
+            aria-label="Host"
+            list={hostListId}
+            type="text"
+            value={hostAlias}
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              onRuntimeChange(agent.id, {
+                vpnAlias: event.target.value,
+                workspaceRoot:
+                  event.target.value.trim() &&
+                  (!runtime?.workspaceRoot || runtime.workspaceRoot === '.')
+                    ? getDewDropHost(event.target.value)?.defaultWorkspaceRoot ?? runtime?.workspaceRoot
+                    : runtime?.workspaceRoot,
+              })
+            }
+            placeholder="local or vpn host"
+          />
+          <datalist id={hostListId}>
+            {hostSuggestions.map((host) => (
+              <option key={host.value} value={host.value}>
+                {host.label}
+              </option>
+            ))}
+          </datalist>
+        </label>
       </div>
 
       <p className="freeform-toolbar-panel-hint">
         {runtime?.sessionState?.sessionId
-          ? `Session ${runtime.sessionState.sessionId.slice(-6)}`
-          : 'Terminal will boot on first render.'}
+          ? `Session ${runtime.sessionState.sessionId.slice(-6)}${hostAlias.trim() ? ` via ${hostAlias.trim()}` : ''}`
+          : hostAlias.trim()
+            ? `${runtimeProfileLabel(runtime?.profile)} will boot through ${hostAlias.trim()}.`
+            : `${runtimeProfileLabel(runtime?.profile)} will boot on first render.`}
       </p>
+      <p className="freeform-toolbar-panel-hint">Route: {routeLabel}</p>
+      <p className="freeform-toolbar-panel-hint">
+        Host status: <strong>{hostStatus.label}</strong>
+        {' '}
+        {hostStatus.detail}
+      </p>
+      {hostRecord ? (
+        <p className="freeform-toolbar-panel-hint">
+          Host profile: {hostRecord.label} • {hostRecord.role} • {hostRecord.summary}
+        </p>
+      ) : null}
 
       <div className="freeform-toolbar-panel-actions">
         <button
@@ -135,6 +229,54 @@ export function DewDropTerminalCard({
           Refresh
         </button>
       </div>
+
+      <div className="freeform-toolbar-panel-actions">
+        {onCheckHost && hostAlias.trim() ? (
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={() => onCheckHost(agent.id, hostAlias.trim())}
+            disabled={busy}
+          >
+            Check host
+          </button>
+        ) : null}
+        {onCopyShell ? (
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={() => onCopyShell(agent.id, shellCommand)}
+            disabled={busy}
+          >
+            Copy shell
+          </button>
+        ) : null}
+        {bootstrapText && onCopyBootstrap ? (
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={() => onCopyBootstrap(agent.id, bootstrapText)}
+            disabled={busy}
+          >
+            Copy bootstrap
+          </button>
+        ) : null}
+        {onRelayClipboard ? (
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={() => onRelayClipboard(agent.id)}
+            disabled={busy || !canSendInput}
+          >
+            Relay clipboard
+          </button>
+        ) : null}
+      </div>
+      {onRelayClipboard ? (
+        <p className="freeform-toolbar-panel-hint">
+          Clipboard relay reads the current clipboard once and sends it straight into the live DewDrop without storing it in board state.
+        </p>
+      ) : null}
 
       {onSendInput ? (
         <>
@@ -179,6 +321,22 @@ export function DewDropTerminalCard({
           <p className="freeform-toolbar-panel-hint">No recent logs.</p>
         )}
       </div>
+
+      {bootstrapPlan ? (
+        <div className="freeform-packet-list">
+          <p className="freeform-toolbar-panel-hint">
+            <strong>{bootstrapPlan.title}</strong>
+            {' '}
+            {bootstrapPlan.summary}
+          </p>
+          <pre className="freeform-terminal-log">{bootstrapPlan.commands.join('\n')}</pre>
+          {bootstrapPlan.notes.map((note) => (
+            <p key={note} className="freeform-toolbar-panel-hint">
+              {note}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </article>
   )
 }

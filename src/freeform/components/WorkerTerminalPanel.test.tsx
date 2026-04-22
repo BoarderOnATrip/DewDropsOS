@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import type { DewDropHostStatus } from '../dewdropHosts'
 import { WorkerTerminalPanel } from './WorkerTerminalPanel'
 import type { WorkflowCard } from '../types'
 
@@ -47,6 +48,17 @@ describe('WorkerTerminalPanel', () => {
     const onStop = vi.fn()
     const onRefresh = vi.fn()
     const onSendInput = vi.fn()
+    const onCheckHost = vi.fn()
+    const onRelayClipboard = vi.fn()
+    const onCopyShell = vi.fn()
+    const onCopyBootstrap = vi.fn()
+    const hostStatusByAlias: Record<string, DewDropHostStatus> = {
+      'builder-01': {
+        tone: 'ready',
+        label: 'Builder 01 reachable',
+        detail: 'SSH reached the host and the DewDrop route is available.',
+      },
+    }
 
     function Harness() {
       const [currentAgent, setCurrentAgent] = useState(agent())
@@ -76,6 +88,11 @@ describe('WorkerTerminalPanel', () => {
           onStop={onStop}
           onRefresh={onRefresh}
           onSendInput={onSendInput}
+          onCheckHost={onCheckHost}
+          onRelayClipboard={onRelayClipboard}
+          onCopyShell={onCopyShell}
+          onCopyBootstrap={onCopyBootstrap}
+          hostStatusByAlias={hostStatusByAlias}
         />
       )
     }
@@ -84,8 +101,11 @@ describe('WorkerTerminalPanel', () => {
 
     expect(screen.getByText('Worker 1')).toBeInTheDocument()
     expect(screen.getByLabelText('Terminal label')).toHaveValue('Worker 1')
+    expect(screen.getByLabelText('Runtime')).toHaveValue('custom')
     expect(screen.getByLabelText('Shell')).toHaveValue('openclaw')
     expect(screen.getByLabelText('Root')).toHaveValue('/tmp/project')
+    expect(screen.getByLabelText('Host')).toHaveValue('')
+    expect(screen.getByText(/Host status:/i)).toHaveTextContent('Local machine')
     expect(screen.getByText('[stdout] ready')).toBeInTheDocument()
 
     await user.clear(screen.getByLabelText('Terminal label'))
@@ -98,9 +118,41 @@ describe('WorkerTerminalPanel', () => {
     expect(onRuntimeChange).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ command: 'codex' }))
     expect(screen.getByLabelText('Shell')).toHaveValue('codex')
 
+    await user.selectOptions(screen.getByLabelText('Runtime'), 'hermes')
+    expect(onRuntimeChange).toHaveBeenLastCalledWith(
+      'agent-1',
+      expect.objectContaining({ profile: 'hermes', command: 'hermes' }),
+    )
+    expect(screen.getByLabelText('Runtime')).toHaveValue('hermes')
+    expect(screen.getByLabelText('Shell')).toHaveValue('hermes')
+    expect(screen.getByText(/Hermes node bootstrap/i)).toBeInTheDocument()
+    expect(screen.getByText(/Route: local/i)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Host'), 'builder-01')
+    expect(onRuntimeChange).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ vpnAlias: 'builder-01' }))
+    expect(screen.getByLabelText('Host')).toHaveValue('builder-01')
+    expect(screen.getByText(/Route: vpn-ssh via builder-01/i)).toBeInTheDocument()
+    expect(screen.getByText(/Host profile:/i)).toHaveTextContent('Builder 01')
+    expect(screen.getByText(/Host status:/i)).toHaveTextContent('Builder 01 reachable')
+
+    await user.click(screen.getByRole('button', { name: 'Check host' }))
+    expect(onCheckHost).toHaveBeenCalledWith('agent-1', 'builder-01')
+
+    await user.click(screen.getByRole('button', { name: 'Copy shell' }))
+    expect(onCopyShell).toHaveBeenCalledWith('agent-1', 'hermes')
+
+    await user.click(screen.getByRole('button', { name: 'Copy bootstrap' }))
+    expect(onCopyBootstrap).toHaveBeenCalledWith(
+      'agent-1',
+      expect.stringContaining('curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash'),
+    )
+
     await user.type(screen.getByLabelText('Live input'), 'npm test')
     await user.click(screen.getByRole('button', { name: 'Send' }))
     expect(onSendInput).toHaveBeenCalledWith('agent-1', 'npm test\n')
+
+    await user.click(screen.getByRole('button', { name: 'Relay clipboard' }))
+    expect(onRelayClipboard).toHaveBeenCalledWith('agent-1')
 
     await user.click(screen.getByRole('button', { name: 'Restart' }))
     await user.click(screen.getByRole('button', { name: 'Stop' }))

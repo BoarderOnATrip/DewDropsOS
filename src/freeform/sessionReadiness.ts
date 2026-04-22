@@ -1,6 +1,7 @@
 import type { ButlerBridgeHealth } from '../lib/butlerBridge'
-import { agentRunsInCliTerminal } from './agentRuntime'
+import { agentRunsInCliTerminal, normalizeAgentRuntime, runtimeProfileLabel } from './agentRuntime'
 import { getCapabilityProfile } from './capabilityProfiles'
+import { summarizeDewDropHostBindings } from './dewdropHosts'
 import { buildProblemApprovalHooks, formatSocialTargetLabel } from './launchMetadata'
 import type { ProblemSessionBlueprint } from './sessionBlueprint'
 import { getSwarmRecipe } from './swarmRecipes'
@@ -140,13 +141,23 @@ function agentRuntimeItem(agentCards: readonly WorkflowCard[]): SessionReadiness
   }
 
   const terminalCount = agentCards.filter((card) => agentRunsInCliTerminal(card)).length
+  const profileSummary = [...agentCards
+    .reduce((counts, card) => {
+      const runtime = normalizeAgentRuntime(card.agentRuntime, { cardId: card.id, title: card.title })
+      const label = runtimeProfileLabel(runtime.profile)
+      counts.set(label, (counts.get(label) ?? 0) + 1)
+      return counts
+    }, new Map<string, number>())
+    .entries()]
+    .map(([label, count]) => `${count} ${label.toLowerCase()}`)
+    .join(', ')
 
   if (terminalCount === agentCards.length) {
     return item(
       'runtime',
       'Live terminals',
       'ready',
-      `${terminalCount} of ${agentCards.length} assigned DewDrop${agentCards.length === 1 ? '' : 's'} are ready as terminal sessions.`,
+      `${terminalCount} of ${agentCards.length} assigned DewDrop${agentCards.length === 1 ? '' : 's'} are ready as terminal sessions${profileSummary ? ` (${profileSummary})` : ''}.`,
     )
   }
 
@@ -164,6 +175,28 @@ function agentRuntimeItem(agentCards: readonly WorkflowCard[]): SessionReadiness
     'Live terminals',
     'attention',
     `${terminalCount} of ${agentCards.length} assigned DewDrops are live terminals. Bring the rest online before launch.`,
+  )
+}
+
+function hostBindingItem(agentCards: readonly WorkflowCard[]): SessionReadinessItem {
+  if (agentCards.length === 0) {
+    return item(
+      'hosts',
+      'Worker hosts',
+      'attention',
+      'No worker hosts are bound yet because no DewDrops are assigned.',
+    )
+  }
+
+  const runtimes = agentCards.map((card) =>
+    normalizeAgentRuntime(card.agentRuntime, { cardId: card.id, title: card.title }),
+  )
+  const hostSummary = summarizeDewDropHostBindings(runtimes)
+  return item(
+    'hosts',
+    'Worker hosts',
+    hostSummary.tone,
+    hostSummary.detail,
   )
 }
 
@@ -201,6 +234,7 @@ export function buildProblemSessionReadiness(
         : 'No agents are assigned yet. Pull a team into the problem room before launch.',
     ),
     agentRuntimeItem(agentCards),
+    hostBindingItem(agentCards),
     item(
       'memory',
       'Memory palace binding',

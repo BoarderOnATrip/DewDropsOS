@@ -161,6 +161,7 @@ describe('BoardView', () => {
     await user.click(screen.getByText('Agent 1'))
 
     expect(screen.getByText('Selected terminal')).toBeInTheDocument()
+    expect(screen.getByLabelText('Runtime')).toHaveValue('codex')
     expect(screen.getByLabelText('Shell')).toHaveValue('codex')
     expect(screen.getByLabelText('Root')).toHaveValue('.')
   })
@@ -237,8 +238,76 @@ describe('BoardView', () => {
     await user.click(screen.getByRole('button', { name: 'New terminal' }))
 
     expect(screen.getByText('Selected terminal')).toBeInTheDocument()
+    expect(screen.getByLabelText('Runtime')).toHaveValue('custom')
     expect(screen.getByLabelText('Shell')).toHaveValue('zsh -i -f')
     expect(screen.getByLabelText('Root')).toHaveValue('.')
+    expect(screen.getByLabelText('Host')).toHaveValue('')
+  })
+
+  it('spins up a Hermes node from the toolbar', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-new-hermes"
+        bootState={{
+          camera: { x: 32, y: 64, zoom: 0.9 },
+          cards: [],
+          wires: [],
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New Hermes' }))
+
+    expect(screen.getByText('Selected terminal')).toBeInTheDocument()
+    expect(screen.getByLabelText('Runtime')).toHaveValue('hermes')
+    expect(screen.getByLabelText('Shell')).toHaveValue('hermes')
+    expect(screen.getByLabelText('Host')).toHaveValue('')
+  })
+
+  it('spins up a browser node from the toolbar', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-new-browser"
+        bootState={{
+          camera: { x: 32, y: 64, zoom: 0.9 },
+          cards: [],
+          wires: [],
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New browser' }))
+
+    expect(screen.getByText('Selected terminal')).toBeInTheDocument()
+    expect(screen.getByLabelText('Runtime')).toHaveValue('browser-harness')
+    expect(screen.getByLabelText('Shell')).toHaveValue('browser-harness')
+    expect(screen.getByLabelText('Host')).toHaveValue('')
+  })
+
+  it('spins up a Playwright node from the toolbar', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-new-playwright"
+        bootState={{
+          camera: { x: 32, y: 64, zoom: 0.9 },
+          cards: [],
+          wires: [],
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'New Playwright' }))
+
+    expect(screen.getByText('Selected terminal')).toBeInTheDocument()
+    expect(screen.getByLabelText('Runtime')).toHaveValue('playwright')
+    expect(screen.getByLabelText('Shell')).toHaveValue('npx playwright test')
+    expect(screen.getByLabelText('Host')).toHaveValue('')
   })
 
   it('persists mission edits made directly inside the briefcase harness', async () => {

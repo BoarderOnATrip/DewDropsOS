@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
+import { runtimeProfileLabel } from '../agentRuntime'
 import type { DewDropSessionStatus, WorkflowCard } from '../types'
 
 type DewDropTerminalSurfaceProps = {
@@ -57,8 +58,10 @@ export function DewDropTerminalSurface({
   const outputVersion = sessionState?.outputVersion ?? 0
   const status = statusLabel(sessionState?.status)
   const tone = statusTone(sessionState?.status)
+  const runtimeLabel = runtimeProfileLabel(runtime?.profile)
   const shellCommand = runtime?.command ?? 'zsh -i -f'
   const workspaceRoot = runtime?.workspaceRoot ?? '.'
+  const hostAlias = runtime?.vpnAlias?.trim() || ''
   const canStop = ['starting', 'running', 'blocked'].includes(sessionState?.status ?? '')
   const canRefresh = !!sessionId
   const canType = !!sessionId && ['running', 'blocked'].includes(sessionState?.status ?? '')
@@ -253,8 +256,10 @@ export function DewDropTerminalSurface({
         <div className="freeform-terminal-surface-meta">
           <strong>{agent.title}</strong>
           <span className={`freeform-session-pill is-${tone}`}>{status}</span>
+          <span className="freeform-terminal-chip">{runtimeLabel}</span>
           <span className="freeform-terminal-chip">{shellCommand}</span>
           <span className="freeform-terminal-chip">{workspaceRoot}</span>
+          {hostAlias ? <span className="freeform-terminal-chip">{hostAlias}</span> : null}
         </div>
         <div className="freeform-toolbar-panel-actions">
           <button

@@ -123,6 +123,20 @@ function resolveLaunchSpec(command: string): LaunchSpec {
   }
 }
 
+function resolveExplicitLaunch(file: string, args: readonly string[] | undefined): LaunchSpec {
+  const nextFile = file.trim()
+  if (!nextFile) {
+    throw new Error('A runtime session launch file is required.')
+  }
+  const nextArgs = Array.isArray(args)
+    ? args.filter((value): value is string => typeof value === 'string')
+    : []
+  return {
+    file: nextFile,
+    args: nextArgs,
+  }
+}
+
 function appendTerminalOutput(
   session: InternalRuntimeSession,
   chunk: string,
@@ -196,7 +210,10 @@ export class RuntimeSessionStore {
     if (!command) {
       throw new Error('A runtime session command is required.')
     }
-    const launch = resolveLaunchSpec(command)
+    const launch =
+      typeof input.launchFile === 'string' && input.launchFile.trim()
+        ? resolveExplicitLaunch(input.launchFile, input.launchArgs)
+        : resolveLaunchSpec(command)
 
     const id = randomUUID()
     const startedAt = isoNow()
@@ -218,6 +235,8 @@ export class RuntimeSessionStore {
         id,
         label: input.label.trim() || id,
         command,
+        launchFile: launch.file,
+        launchArgs: [...launch.args],
         cwd,
         workspaceId: input.workspaceId?.trim() || undefined,
         problemId: input.problemId?.trim() || undefined,

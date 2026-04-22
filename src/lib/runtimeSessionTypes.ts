@@ -14,6 +14,15 @@ export type RuntimeBridgeHealth = {
   activeSessions: number
 }
 
+export type RuntimeHostCheck = {
+  alias: string
+  route: 'local' | 'vpn-ssh'
+  ok: boolean
+  checkedAt: string
+  latencyMs: number
+  detail: string
+}
+
 export type RuntimeSessionPolicy = {
   maxRuntimeMs?: number
   maxSteps?: number
@@ -26,6 +35,8 @@ export type RuntimeSessionRecord = {
   id: string
   label: string
   command: string
+  launchFile?: string
+  launchArgs?: string[]
   cwd: string
   workspaceId?: string
   problemId?: string
@@ -49,6 +60,8 @@ export type RuntimeSessionRecord = {
 export type CreateRuntimeSessionInput = {
   label: string
   command: string
+  launchFile?: string
+  launchArgs?: string[]
   cwd?: string
   workspaceId?: string
   problemId?: string

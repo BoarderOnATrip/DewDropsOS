@@ -168,4 +168,17 @@ describe('runtimeBridgePlugin', () => {
       status: 'killed',
     })
   })
+
+  it('serves host checks from the same-origin middleware', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'dewdrops-runtime-'))
+    const middleware = installMiddleware(rootDir)
+
+    const localHost = await invoke(middleware, '/api/runtime/hosts/local/check', 'GET')
+    expect(localHost.status).toBe(200)
+    expect(localHost.body).toMatchObject({
+      alias: 'local',
+      route: 'local',
+      ok: true,
+    })
+  })
 })

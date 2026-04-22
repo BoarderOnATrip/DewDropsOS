@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { flushSync } from 'react-dom'
-import type { ArtifactStatus, BoardCamera, BoardWire, DewDropsWorkspaceMode, WorkflowCard } from './types'
+import type {
+  AgentRuntimeProfile,
+  ArtifactStatus,
+  BoardCamera,
+  BoardWire,
+  DewDropsWorkspaceMode,
+  WorkflowCard,
+} from './types'
 import { hedgerowsDeltaSquadCards, hedgerowsPresetAgentCount } from './presets/hedgerowsDeltaSquad'
 import { PRESET_REGISTRY, type PresetEntry } from './presets/index'
 import { PresetPicker } from './components/PresetPicker'
@@ -56,11 +63,13 @@ import { bumpBriefVersion, compileBriefPacket } from './briefCompiler'
 import { normalizeBriefSpec } from './briefSpec'
 import {
   defaultCommandForRuntimeProfile,
+  defaultRuntimeForProfile,
   defaultTerminalRuntime,
   normalizeAgentRuntime,
   normalizeAgentRuntimeCard,
 } from './agentRuntime'
 import {
+  checkWorkerTerminalHost,
   createWorkerTerminalSession,
   getWorkerTerminalSession,
   listWorkerTerminalSessions,
@@ -69,6 +78,7 @@ import {
   stopWorkerTerminalSession,
   workerTerminalStateFromSession,
 } from '../lib/workerTerminalBridge'
+import { getDewDropHost, type DewDropHostStatus } from './dewdropHosts'
 import { applyCapabilityPack, getCapabilityPack, listCapabilityPacks, resolveCapabilityPackId, syncCapabilityPack } from './capabilityPacks'
 import { listCapabilityProfiles } from './capabilityProfiles'
 import { buildBriefCompartmentOptions, createBriefCompartmentAsset } from './briefCompartments'
@@ -183,6 +193,13 @@ async function copyTextToClipboard(text: string): Promise<void> {
   if (!copied) {
     throw new Error('Clipboard is unavailable in this browser session.')
   }
+}
+
+async function readTextFromClipboard(): Promise<string> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+    return navigator.clipboard.readText()
+  }
+  throw new Error('Clipboard reading is unavailable in this browser session.')
 }
 
 /** Default board = Hedgerows 2.0 Δ squad (virtual company preset). */
@@ -326,6 +343,48 @@ const BULK_SUMMON_COLORS = [
   '#c4c4c4',
 ]
 
+const DEWDROP_NODE_TEMPLATES: ReadonlyArray<{
+  id: 'shell' | 'hermes' | 'browser' | 'playwright'
+  label: string
+  notice: string
+  titlePrefix: string
+  color: string
+  profile: AgentRuntimeProfile
+}> = [
+  {
+    id: 'shell',
+    label: 'New terminal',
+    notice: 'New terminal ready',
+    titlePrefix: 'Terminal',
+    color: '#af52de',
+    profile: 'custom',
+  },
+  {
+    id: 'hermes',
+    label: 'New Hermes',
+    notice: 'New Hermes node ready',
+    titlePrefix: 'Hermes',
+    color: '#30d158',
+    profile: 'hermes',
+  },
+  {
+    id: 'browser',
+    label: 'New browser',
+    notice: 'New browser node ready',
+    titlePrefix: 'Browser',
+    color: '#0a84ff',
+    profile: 'browser-harness',
+  },
+  {
+    id: 'playwright',
+    label: 'New Playwright',
+    notice: 'New Playwright node ready',
+    titlePrefix: 'Playwright',
+    color: '#ffd60a',
+    profile: 'playwright',
+  },
+] as const
+
 const TOOLBAR_PANEL_OPEN_KEY = 'dewdrops-toolbar-panel-open'
 const WORKSPACE_MODE_KEY = 'dewdrops-workspace-mode'
 
@@ -439,6 +498,7 @@ export default function BoardView({
   const [launchBusy, setLaunchBusy] = useState(false)
   const [stopBusy, setStopBusy] = useState(false)
   const [workerTerminalBusyIds, setWorkerTerminalBusyIds] = useState<string[]>([])
+  const [workerHostStatusByAlias, setWorkerHostStatusByAlias] = useState<Record<string, DewDropHostStatus>>({})
   const [recentRuns, setRecentRuns] = useState<ButlerSwarmRun[]>([])
   const [currentRunId, setCurrentRunId] = useState('')
   const [currentRunReport, setCurrentRunReport] = useState<ButlerSwarmRunReport | null>(null)
@@ -930,7 +990,11 @@ export default function BoardView({
     }
   }
 
-  const spawnTerminalAt = useCallback((wx: number, wy: number) => {
+  const spawnNodeAt = useCallback((
+    wx: number,
+    wy: number,
+    template: (typeof DEWDROP_NODE_TEMPLATES)[number] = DEWDROP_NODE_TEMPLATES[0]!,
+  ) => {
     agentSummon.current += 1
     const n = agentSummon.current
     const id = newCardId()
@@ -944,14 +1008,14 @@ export default function BoardView({
         y: wy - h / 2,
         width: w,
         height: h,
-        title: `Terminal ${n}`,
+        title: `${template.titlePrefix} ${n}`,
         expanded: true,
-        color: '#af52de',
+        color: template.color,
         kind: 'agent',
         assignedToProblemId: null,
         parentAgentId: null,
         management: 'manual',
-        agentRuntime: defaultTerminalRuntime(id, `Terminal ${n}`),
+        agentRuntime: defaultRuntimeForProfile(id, `${template.titlePrefix} ${n}`, template.profile),
       },
     ])
     setSelectedIds([id])
@@ -959,21 +1023,43 @@ export default function BoardView({
     return id
   }, [])
 
+  const spawnNodeInView = useCallback((template: (typeof DEWDROP_NODE_TEMPLATES)[number]) => {
+    spawnNodeAt(camera.x, camera.y, template)
+    setBoardNotice({ text: template.notice, tone: 'ok' })
+  }, [camera.x, camera.y, spawnNodeAt])
+
   const spawnTerminalInView = useCallback(() => {
-    spawnTerminalAt(camera.x, camera.y)
-    setBoardNotice({ text: 'New terminal ready', tone: 'ok' })
-  }, [camera.x, camera.y, spawnTerminalAt])
+    spawnNodeInView(DEWDROP_NODE_TEMPLATES[0]!)
+  }, [spawnNodeInView])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.repeat || e.key.toLowerCase() !== 't') return
+      if (e.defaultPrevented || e.repeat) return
       if (isTerminalTypingTarget(e.target)) return
-      e.preventDefault()
-      spawnTerminalInView()
+      const key = e.key.toLowerCase()
+      if (key === 't') {
+        e.preventDefault()
+        spawnTerminalInView()
+        return
+      }
+      if (key === 'h') {
+        e.preventDefault()
+        spawnNodeInView(DEWDROP_NODE_TEMPLATES[1]!)
+        return
+      }
+      if (key === 'b') {
+        e.preventDefault()
+        spawnNodeInView(DEWDROP_NODE_TEMPLATES[2]!)
+        return
+      }
+      if (key === 'p') {
+        e.preventDefault()
+        spawnNodeInView(DEWDROP_NODE_TEMPLATES[3]!)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [spawnTerminalInView])
+  }, [spawnNodeInView, spawnTerminalInView])
 
   const resolveAgentAssignment = useCallback((agentId: string, fallbackProblemId: string | null = null) => {
     let handshakeProblemId: string | null = null
@@ -1726,6 +1812,28 @@ export default function BoardView({
     }
   }, [])
 
+  const hostStatusFromCheck = useCallback((
+    hostAlias: string,
+    ok: boolean,
+    detail: string,
+    latencyMs: number,
+  ): DewDropHostStatus => {
+    const host = getDewDropHost(hostAlias)
+    const suffix = latencyMs > 0 ? ` Checked in ${latencyMs}ms.` : ''
+    if (ok) {
+      return {
+        tone: 'ready',
+        label: host ? `${host.label} reachable` : `${hostAlias} reachable`,
+        detail: `${detail}${suffix}`,
+      }
+    }
+    return {
+      tone: 'missing',
+      label: host ? `${host.label} unreachable` : 'Host unreachable',
+      detail: `${detail}${suffix}`,
+    }
+  }, [])
+
   const refreshWorkerTerminalAgent = useCallback(async (agentId: string) => {
     const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
     const runtime = agent?.agentRuntime ? normalizeAgentRuntime(agent.agentRuntime, { cardId: agent.id, title: agent.title }) : null
@@ -1743,6 +1851,40 @@ export default function BoardView({
       }
     })
   }, [syncWorkerTerminalState, withWorkerTerminalBusy])
+
+  const checkWorkerTerminalAgentHost = useCallback(async (agentId: string, hostAlias: string) => {
+    const normalizedHost = hostAlias.trim()
+    if (!normalizedHost) {
+      setBoardNotice({
+        text: 'This DewDrop is running locally, so there is no remote host to check.',
+        tone: 'ok',
+      })
+      return
+    }
+    await withWorkerTerminalBusy(agentId, async () => {
+      try {
+        const result = await checkWorkerTerminalHost(normalizedHost)
+        setWorkerHostStatusByAlias((prev) => ({
+          ...prev,
+          [normalizedHost]: hostStatusFromCheck(normalizedHost, result.ok, result.detail, result.latencyMs),
+        }))
+        setBoardNotice({
+          text: result.ok ? `${normalizedHost} is reachable.` : `${normalizedHost} is not reachable.`,
+          tone: result.ok ? 'ok' : 'error',
+        })
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : `Could not check ${normalizedHost}.`
+        setWorkerHostStatusByAlias((prev) => ({
+          ...prev,
+          [normalizedHost]: hostStatusFromCheck(normalizedHost, false, detail, 0),
+        }))
+        setBoardNotice({
+          text: detail,
+          tone: 'error',
+        })
+      }
+    })
+  }, [hostStatusFromCheck, withWorkerTerminalBusy])
 
   const startWorkerTerminalAgent = useCallback(async (agentId: string) => {
     const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
@@ -1816,6 +1958,72 @@ export default function BoardView({
       })
     }
   }, [syncWorkerTerminalState])
+
+  const relayClipboardToWorkerTerminal = useCallback(async (agentId: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    const sessionId = agent?.agentRuntime?.sessionState?.sessionId
+    if (!agent || !sessionId) {
+      setBoardNotice({
+        text: 'Start the DewDrop before relaying clipboard content into it.',
+        tone: 'error',
+      })
+      return
+    }
+    await withWorkerTerminalBusy(agentId, async () => {
+      try {
+        const text = await readTextFromClipboard()
+        if (!text) {
+          setBoardNotice({
+            text: 'Clipboard is empty.',
+            tone: 'error',
+          })
+          return
+        }
+        await sendWorkerTerminalInput(agentId, text)
+        setBoardNotice({
+          text: `Relayed clipboard into ${agent.title}.`,
+          tone: 'ok',
+        })
+      } catch (error) {
+        setBoardNotice({
+          text: error instanceof Error ? error.message : `Could not relay clipboard into ${agent.title}.`,
+          tone: 'error',
+        })
+      }
+    })
+  }, [sendWorkerTerminalInput, withWorkerTerminalBusy])
+
+  const copyWorkerTerminalCommand = useCallback(async (agentId: string, command: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    try {
+      await copyTextToClipboard(command)
+      setBoardNotice({
+        text: `Copied ${agent?.title ?? 'DewDrop'} shell command.`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      setBoardNotice({
+        text: error instanceof Error ? error.message : 'Could not copy the shell command.',
+        tone: 'error',
+      })
+    }
+  }, [])
+
+  const copyWorkerTerminalBootstrap = useCallback(async (agentId: string, bootstrapText: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    try {
+      await copyTextToClipboard(bootstrapText)
+      setBoardNotice({
+        text: `Copied ${agent?.title ?? 'DewDrop'} bootstrap plan.`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      setBoardNotice({
+        text: error instanceof Error ? error.message : 'Could not copy the bootstrap plan.',
+        tone: 'error',
+      })
+    }
+  }, [])
 
   const resizeWorkerTerminalAgent = useCallback(async (
     agentId: string,
@@ -2463,7 +2671,7 @@ export default function BoardView({
     const sx = e.clientX - rect.left
     const sy = e.clientY - rect.top
     const { x, y } = screenToWorld(sx, sy)
-    spawnTerminalAt(x, y)
+    spawnNodeAt(x, y, DEWDROP_NODE_TEMPLATES[0]!)
   }
 
   const worldTransform = `translate(${size.w / 2}px, ${size.h / 2}px) scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`
@@ -2641,7 +2849,7 @@ export default function BoardView({
           <h1>DewDrops</h1>
           <p>
             {workspaceName ? `${workspaceName} • ` : ''}
-            Click `New terminal` or press `T` to spin one up instantly. Double-click empty space also works.
+            Spin up `Terminal`, `Hermes`, `Browser`, or `Playwright` nodes instantly. Shortcuts: `T`, `H`, `B`, `P`. Double-click empty space still drops a terminal.
           </p>
         </div>
         <div className="freeform-toolbar-actions">
@@ -2762,16 +2970,19 @@ export default function BoardView({
           >
             {toolbarPanelOpen ? 'Hide dock' : 'Show dock'}
           </button>
-          <button
-            type="button"
-            className="freeform-btn freeform-btn--tool is-active"
-            title="Spin up a terminal at the center of the current view"
-            onClick={() => {
-              spawnTerminalInView()
-            }}
-          >
-            New terminal
-          </button>
+          {DEWDROP_NODE_TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className={`freeform-btn freeform-btn--tool${template.id === 'shell' ? ' is-active' : ''}`}
+              title={`Spin up a ${template.titlePrefix.toLowerCase()} node at the center of the current view`}
+              onClick={() => {
+                spawnNodeInView(template)
+              }}
+            >
+              {template.label}
+            </button>
+          ))}
           <button
             type="button"
             className="freeform-btn freeform-btn--tool"
@@ -3563,6 +3774,11 @@ export default function BoardView({
             onWorkerTerminalStop={stopWorkerTerminalAgent}
             onWorkerTerminalRefresh={refreshWorkerTerminalAgent}
             onWorkerTerminalSendInput={sendWorkerTerminalInput}
+            onWorkerTerminalCheckHost={checkWorkerTerminalAgentHost}
+            onWorkerTerminalRelayClipboard={relayClipboardToWorkerTerminal}
+            onWorkerTerminalCopyShell={copyWorkerTerminalCommand}
+            onWorkerTerminalCopyBootstrap={copyWorkerTerminalBootstrap}
+            workerHostStatusByAlias={workerHostStatusByAlias}
             workerTerminalBusyIds={workerTerminalBusyIds}
             phoneBrief={selectedProblem.phoneRelayBrief ?? ''}
             desktopBrief={selectedProblem.desktopSessionBrief ?? ''}
@@ -3760,6 +3976,15 @@ export default function BoardView({
                 onStop={stopWorkerTerminalAgent}
                 onRefresh={refreshWorkerTerminalAgent}
                 onSendInput={sendWorkerTerminalInput}
+                onCheckHost={checkWorkerTerminalAgentHost}
+                onRelayClipboard={relayClipboardToWorkerTerminal}
+                onCopyShell={copyWorkerTerminalCommand}
+                onCopyBootstrap={copyWorkerTerminalBootstrap}
+                hostStatusOverride={
+                  selectedAgent.agentRuntime?.vpnAlias?.trim()
+                    ? workerHostStatusByAlias[selectedAgent.agentRuntime.vpnAlias.trim()]
+                    : undefined
+                }
                 autoFocusInput={false}
               />
             </section>

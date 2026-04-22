@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
 import type { Plugin, PreviewServer, ViteDevServer } from 'vite'
 import { RuntimeSessionStore } from './runtimeSessionStore'
@@ -6,6 +7,7 @@ import type {
   CreateRuntimeSessionInput,
   ResizeRuntimeSessionInput,
   RuntimeBridgeHealth,
+  RuntimeHostCheck,
   RuntimeSessionRecord,
   WriteRuntimeSessionInput,
 } from './runtimeSessionTypes'
@@ -150,6 +152,90 @@ function toStringRecord(value: unknown): Record<string, string> | undefined {
   return Object.fromEntries(entries)
 }
 
+function isoNow(): string {
+  return new Date().toISOString()
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+async function probeRuntimeHost(alias: string): Promise<RuntimeHostCheck> {
+  const normalized = alias.trim()
+  const startedAt = Date.now()
+
+  if (!normalized || normalized === 'local' || normalized === 'localhost') {
+    return {
+      alias: normalized || 'local',
+      route: 'local',
+      ok: true,
+      checkedAt: isoNow(),
+      latencyMs: 0,
+      detail: 'Local machine available through the current DewDrops runtime.',
+    }
+  }
+
+  return new Promise<RuntimeHostCheck>((resolve) => {
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const finish = (ok: boolean, detail: string) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutHandle)
+      resolve({
+        alias: normalized,
+        route: 'vpn-ssh',
+        ok,
+        checkedAt: isoNow(),
+        latencyMs: Date.now() - startedAt,
+        detail,
+      })
+    }
+
+    const child = spawn(
+      'ssh',
+      [
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=4',
+        '-o',
+        'StrictHostKeyChecking=accept-new',
+        normalized,
+        'printf __DEWDROPS_HOST_OK__',
+      ],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+
+    const timeoutHandle = setTimeout(() => {
+      child.kill('SIGKILL')
+      finish(false, 'Host check timed out before SSH completed.')
+    }, 5000)
+
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString()
+    })
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString()
+    })
+    child.on('error', (error) => {
+      finish(false, error.message)
+    })
+    child.on('exit', (code) => {
+      const markerSeen = stdout.includes('__DEWDROPS_HOST_OK__')
+      const stderrText = collapseWhitespace(stderr)
+      if (code === 0 && markerSeen) {
+        finish(true, 'SSH reached the host and the DewDrop route is available.')
+        return
+      }
+      finish(false, stderrText || `SSH exited with code ${code ?? 'unknown'}.`)
+    })
+  })
+}
+
 function createRuntimeBridgeHandler(rootDir: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://localhost')
@@ -190,6 +276,11 @@ function createRuntimeBridgeHandler(rootDir: string) {
         const created = store.createSession({
           label: typeof body.label === 'string' ? body.label : body.command,
           command: body.command,
+          launchFile: typeof body.launchFile === 'string' ? body.launchFile : undefined,
+          launchArgs:
+            Array.isArray(body.launchArgs) && body.launchArgs.every((entry) => typeof entry === 'string')
+              ? (body.launchArgs as string[])
+              : undefined,
           cwd: resolveAllowedCommandRoot(
             rootDir,
             body.cwd,
@@ -215,6 +306,23 @@ function createRuntimeBridgeHandler(rootDir: string) {
         })
       }
       return
+    }
+
+    const hostPath = matchPath(url.pathname, '/api/runtime/hosts')
+    if (req.method === 'GET' && hostPath) {
+      const [encodedAlias, action] = hostPath.split('/').filter(Boolean)
+      if (encodedAlias && action === 'check') {
+        try {
+          const alias = decodeURIComponent(encodedAlias)
+          sendJson(res, 200, await probeRuntimeHost(alias))
+        } catch (error) {
+          sendJson(res, 500, {
+            ok: false,
+            error: error instanceof Error ? error.message : 'Could not check the requested host.',
+          })
+        }
+        return
+      }
     }
 
     const sessionPath = matchPath(url.pathname, '/api/runtime/sessions')

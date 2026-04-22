@@ -61,8 +61,17 @@ export type AgentManagement = 'manual' | 'auto'
 
 export type AgentRuntimeKind = 'terminal' | 'service'
 
-/** Mounted worker inside the envelope, e.g. openclaw, codex, claude-code, paperclip. */
-export type AgentRuntimeProfile = 'openclaw' | 'codex' | 'claude-code' | 'paperclip' | 'custom'
+/** Mounted worker inside the envelope, e.g. Hermes, Codex, browser-harness, or a plain shell. */
+export type AgentRuntimeProfile =
+  | 'openclaw'
+  | 'hermes'
+  | 'codex'
+  | 'claude-code'
+  | 'paperclip'
+  | 'browser-harness'
+  | 'browser-harness-js'
+  | 'playwright'
+  | 'custom'
 
 export type AgentRuntimeTransport = 'cli' | 'api'
 

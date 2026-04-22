@@ -21,10 +21,62 @@ type RuntimeLike = Partial<AgentRuntimeBinding> & {
 
 const TERMINAL_PROFILES: readonly AgentRuntimeProfile[] = [
   'openclaw',
+  'hermes',
   'codex',
   'claude-code',
   'paperclip',
+  'browser-harness',
+  'browser-harness-js',
+  'playwright',
   'custom',
+] as const
+const LEGACY_PROVIDER_PROFILES: readonly AgentRuntimeProfile[] = [
+  'openclaw',
+  'codex',
+  'claude-code',
+  'paperclip',
+] as const
+
+export const DEWDROP_RUNTIME_PROFILE_OPTIONS: ReadonlyArray<{
+  value: AgentRuntimeProfile
+  label: string
+  detail: string
+}> = [
+  {
+    value: 'custom',
+    label: 'Shell',
+    detail: 'Plain terminal envelope for direct shell work.',
+  },
+  {
+    value: 'hermes',
+    label: 'Hermes',
+    detail: 'Host-level agent runtime with skills, memory, and remote backends.',
+  },
+  {
+    value: 'codex',
+    label: 'Codex',
+    detail: 'Coding worker mounted through the Codex CLI.',
+  },
+  {
+    value: 'claude-code',
+    label: 'Claude Code',
+    detail: 'Coding worker mounted through the Claude CLI.',
+  },
+  {
+    value: 'browser-harness',
+    label: 'Browser Harness',
+    detail: 'Editable Python CDP worker for real browser work.',
+  },
+  {
+    value: 'browser-harness-js',
+    label: 'Browser JS',
+    detail: 'Typed CDP worker with the thinnest browser bridge.',
+  },
+  {
+    value: 'playwright',
+    label: 'Playwright',
+    detail: 'Browser automation and test worker for multi-browser execution.',
+  },
 ] as const
 
 const RUNTIME_KINDS: readonly AgentRuntimeKind[] = ['terminal', 'service'] as const
@@ -87,9 +139,13 @@ const DEFAULT_TERMINAL_ROOT = '.'
 export function defaultCommandForRuntimeProfile(profile: AgentRuntimeProfile): string | undefined {
   if (profile === 'custom') return DEFAULT_TERMINAL_COMMAND
   if (profile === 'openclaw') return 'openclaw'
+  if (profile === 'hermes') return 'hermes'
   if (profile === 'codex') return 'codex'
   if (profile === 'claude-code') return 'claude'
   if (profile === 'paperclip') return 'paperclip'
+  if (profile === 'browser-harness') return 'browser-harness'
+  if (profile === 'browser-harness-js') return 'browser-harness-js'
+  if (profile === 'playwright') return 'npx playwright test'
   return DEFAULT_TERMINAL_COMMAND
 }
 
@@ -110,7 +166,11 @@ function normalizeTerminalEnvelope(
   const legacyProviderCommand =
     profile === 'custom' ? undefined : defaultCommandForRuntimeProfile(profile)
 
-  if (profile !== 'custom' && legacyProviderCommand === command) {
+  if (
+    profile !== 'custom' &&
+    (LEGACY_PROVIDER_PROFILES as readonly string[]).includes(profile) &&
+    legacyProviderCommand === command
+  ) {
     return { profile: 'custom', command: DEFAULT_TERMINAL_COMMAND }
   }
 
@@ -195,7 +255,6 @@ export function defaultTerminalRuntime(cardId: string, title: string): AgentRunt
     transport: 'cli',
     instanceLabel: slug,
     command: DEFAULT_TERMINAL_COMMAND,
-    vpnAlias: slug,
     workspaceRoot: DEFAULT_TERMINAL_ROOT,
     sessionPolicy: defaultDewDropSessionPolicy(),
   }
@@ -203,6 +262,33 @@ export function defaultTerminalRuntime(cardId: string, title: string): AgentRunt
 
 export function defaultOpenClawRuntime(cardId: string, title: string): AgentRuntimeBinding {
   return defaultTerminalRuntime(cardId, title)
+}
+
+export function defaultRuntimeForProfile(
+  cardId: string,
+  title: string,
+  profile: AgentRuntimeProfile,
+): AgentRuntimeBinding {
+  const base = defaultTerminalRuntime(cardId, title)
+  const visibleProfile = pickerRuntimeProfile(profile)
+  if (visibleProfile === 'custom') return base
+  return {
+    ...base,
+    profile: visibleProfile,
+    command: defaultCommandForRuntimeProfile(visibleProfile),
+  }
+}
+
+export function pickerRuntimeProfile(profile: AgentRuntimeProfile | undefined): AgentRuntimeProfile {
+  if (!profile || profile === 'openclaw' || profile === 'paperclip') {
+    return 'custom'
+  }
+  return profile
+}
+
+export function runtimeProfileLabel(profile: AgentRuntimeProfile | undefined): string {
+  const visible = pickerRuntimeProfile(profile)
+  return DEWDROP_RUNTIME_PROFILE_OPTIONS.find((option) => option.value === visible)?.label ?? 'Shell'
 }
 
 export function normalizeAgentRuntime(
@@ -289,7 +375,9 @@ export function describeAgentRuntime(card: WorkflowCard): string {
     title: card.title,
   })
   const root = runtime.workspaceRoot?.trim() || DEFAULT_TERMINAL_ROOT
-  return `terminal in ${root}`
+  const host = runtime.vpnAlias?.trim()
+  const profile = runtime.profile === 'custom' ? 'shell' : runtime.profile
+  return host ? `${profile} via ${host} in ${root}` : `${profile} in ${root}`
 }
 
 export function describeAgentSessionPolicy(runtime: AgentRuntimeBinding): string {

@@ -1,4 +1,5 @@
 import type { AgentRuntimeBinding, WorkflowCard } from '../types'
+import type { DewDropHostStatus } from '../dewdropHosts'
 import { DewDropTerminalCard } from './DewDropTerminalCard'
 
 type WorkerTerminalPanelProps = {
@@ -9,6 +10,11 @@ type WorkerTerminalPanelProps = {
   onStop: (agentId: string) => void
   onRefresh: (agentId: string) => void
   onSendInput?: (agentId: string, input: string) => void
+  onCheckHost?: (agentId: string, hostAlias: string) => void
+  onRelayClipboard?: (agentId: string) => void
+  onCopyShell?: (agentId: string, command: string) => void
+  onCopyBootstrap?: (agentId: string, bootstrapText: string) => void
+  hostStatusByAlias?: Record<string, DewDropHostStatus>
   busyAgentIds?: readonly string[]
 }
 
@@ -20,6 +26,11 @@ export function WorkerTerminalPanel({
   onStop,
   onRefresh,
   onSendInput,
+  onCheckHost,
+  onRelayClipboard,
+  onCopyShell,
+  onCopyBootstrap,
+  hostStatusByAlias = {},
   busyAgentIds = [],
 }: WorkerTerminalPanelProps) {
   if (agents.length === 0) {
@@ -59,6 +70,15 @@ export function WorkerTerminalPanel({
               onStop={onStop}
               onRefresh={onRefresh}
               onSendInput={onSendInput}
+              onCheckHost={onCheckHost}
+              onRelayClipboard={onRelayClipboard}
+              onCopyShell={onCopyShell}
+              onCopyBootstrap={onCopyBootstrap}
+              hostStatusOverride={
+                agent.agentRuntime?.vpnAlias?.trim()
+                  ? hostStatusByAlias[agent.agentRuntime.vpnAlias.trim()]
+                  : undefined
+              }
             />
           )
         })}

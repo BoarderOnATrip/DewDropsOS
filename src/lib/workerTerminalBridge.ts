@@ -6,9 +6,11 @@ import type {
   CreateRuntimeSessionInput,
   ResizeRuntimeSessionInput,
   RuntimeBridgeHealth,
+  RuntimeHostCheck,
   RuntimeSessionRecord,
   WriteRuntimeSessionInput,
 } from './runtimeSessionTypes'
+import { buildWorkerTerminalLaunchPlan } from './workerTerminalLaunch'
 
 export type WorkerTerminalSession = RuntimeSessionRecord
 export type WorkerTerminalHealth = RuntimeBridgeHealth
@@ -54,6 +56,10 @@ export async function getWorkerTerminalHealth(): Promise<WorkerTerminalHealth> {
   return requestJson<WorkerTerminalHealth>('/health')
 }
 
+export async function checkWorkerTerminalHost(hostAlias: string): Promise<RuntimeHostCheck> {
+  return requestJson<RuntimeHostCheck>(`/hosts/${encodeURIComponent(hostAlias)}/check`)
+}
+
 export async function listWorkerTerminalSessions(options?: {
   workspaceId?: string
   problemId?: string
@@ -74,31 +80,7 @@ export async function getWorkerTerminalSession(sessionId: string): Promise<Worke
 export async function createWorkerTerminalSession(
   input: CreateWorkerTerminalSessionInput,
 ): Promise<WorkerTerminalSession> {
-  const body: CreateRuntimeSessionInput = {
-    label: input.title,
-    command: input.runtime.command?.trim() || input.runtime.profile,
-    cwd: input.runtime.workspaceRoot?.trim() || undefined,
-    workspaceId: input.workspaceId?.trim() || undefined,
-    problemId: input.problemId?.trim() || undefined,
-    agentId: input.agentId,
-    env: {
-      DEWDROPS_RUNTIME_KIND: input.runtime.kind,
-      DEWDROPS_RUNTIME_PROFILE: input.runtime.profile,
-      DEWDROPS_RUNTIME_TRANSPORT: input.runtime.transport,
-      DEWDROPS_RUNTIME_VPN_ALIAS: input.runtime.vpnAlias ?? '',
-      DEWDROPS_RUNTIME_INSTANCE_LABEL: input.runtime.instanceLabel,
-    },
-    logTailLimit: 120,
-    sessionPolicy: input.runtime.sessionPolicy
-      ? {
-          maxRuntimeMs: input.runtime.sessionPolicy.maxRuntimeMs,
-          maxSteps: input.runtime.sessionPolicy.maxSteps,
-          allowNetwork: input.runtime.sessionPolicy.allowNetwork,
-          writableRoots: input.runtime.sessionPolicy.writableRoots,
-          requiresApprovalFor: input.runtime.sessionPolicy.requiresApprovalFor,
-        }
-      : undefined,
-  }
+  const body: CreateRuntimeSessionInput = buildWorkerTerminalLaunchPlan(input)
   return requestJson<WorkerTerminalSession>('/sessions', {
     method: 'POST',
     headers: {

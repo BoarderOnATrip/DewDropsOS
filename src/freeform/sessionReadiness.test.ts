@@ -69,7 +69,7 @@ describe('buildProblemSessionReadiness', () => {
 
     expect(readiness.tone).toBe('ready')
     expect(readiness.label).toBe('Launch ready')
-    expect(readiness.summary).toContain('9 ready')
+    expect(readiness.summary).toContain('10 ready')
   })
 
   it('marks capability_profile as ready when a valid id is present in catalog', () => {
@@ -200,6 +200,76 @@ describe('buildProblemSessionReadiness', () => {
     })
 
     expect(readiness.items.find((item) => item.id === 'runtime')?.tone).toBe('missing')
+  })
+
+  it('surfaces the runtime mix when worker terminals are ready', () => {
+    const card = problem()
+    const blueprint = buildProblemSessionBlueprint(card, 'desktop')
+    const readiness = buildProblemSessionReadiness(card, {
+      workspaceMode: 'desktop',
+      agentCount: 2,
+      agentCards: [
+        agent({
+          id: 'agent-hermes',
+          agentRuntime: {
+            kind: 'terminal',
+            profile: 'hermes',
+            transport: 'cli',
+            instanceLabel: 'builder',
+            command: 'hermes',
+          },
+        }),
+        agent({
+          id: 'agent-browser',
+          title: 'Browser worker',
+          agentRuntime: {
+            kind: 'terminal',
+            profile: 'browser-harness',
+            transport: 'cli',
+            instanceLabel: 'browser',
+            command: 'browser-harness',
+          },
+        }),
+      ],
+      bridgeHealth: { ok: true },
+      blueprint,
+    })
+
+    const runtimeItem = readiness.items.find((item) => item.id === 'runtime')
+    expect(runtimeItem?.tone).toBe('ready')
+    expect(runtimeItem?.detail).toContain('1 hermes')
+    expect(runtimeItem?.detail).toContain('1 browser harness')
+
+    const hostItem = readiness.items.find((item) => item.id === 'hosts')
+    expect(hostItem?.tone).toBe('ready')
+    expect(hostItem?.detail).toContain('2 local')
+  })
+
+  it('flags unknown worker hosts in room readiness', () => {
+    const card = problem()
+    const blueprint = buildProblemSessionBlueprint(card, 'desktop')
+    const readiness = buildProblemSessionReadiness(card, {
+      workspaceMode: 'desktop',
+      agentCount: 1,
+      agentCards: [
+        agent({
+          agentRuntime: {
+            kind: 'terminal',
+            profile: 'hermes',
+            transport: 'cli',
+            instanceLabel: 'builder',
+            command: 'hermes',
+            vpnAlias: 'mystery-box',
+          },
+        }),
+      ],
+      bridgeHealth: { ok: true },
+      blueprint,
+    })
+
+    const hostItem = readiness.items.find((item) => item.id === 'hosts')
+    expect(hostItem?.tone).toBe('missing')
+    expect(hostItem?.detail).toContain('unknown host aliases')
   })
 
   it('adds a ready publish approval gate when the room encodes reviewed social release hooks', () => {
