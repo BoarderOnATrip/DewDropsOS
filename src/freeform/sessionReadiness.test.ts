@@ -272,6 +272,67 @@ describe('buildProblemSessionReadiness', () => {
     expect(hostItem?.detail).toContain('unknown host aliases')
   })
 
+  it('marks known remote worker hosts as attention until they are checked', () => {
+    const card = problem()
+    const blueprint = buildProblemSessionBlueprint(card, 'desktop')
+    const readiness = buildProblemSessionReadiness(card, {
+      workspaceMode: 'desktop',
+      agentCount: 1,
+      agentCards: [
+        agent({
+          agentRuntime: {
+            kind: 'terminal',
+            profile: 'hermes',
+            transport: 'cli',
+            instanceLabel: 'builder',
+            command: 'hermes',
+            vpnAlias: 'builder-01',
+          },
+        }),
+      ],
+      bridgeHealth: { ok: true },
+      blueprint,
+    })
+
+    const hostItem = readiness.items.find((item) => item.id === 'hosts')
+    expect(hostItem?.tone).toBe('attention')
+    expect(hostItem?.detail).toContain('pending check')
+  })
+
+  it('marks unreachable checked worker hosts as missing', () => {
+    const card = problem()
+    const blueprint = buildProblemSessionBlueprint(card, 'desktop')
+    const readiness = buildProblemSessionReadiness(card, {
+      workspaceMode: 'desktop',
+      agentCount: 1,
+      agentCards: [
+        agent({
+          agentRuntime: {
+            kind: 'terminal',
+            profile: 'hermes',
+            transport: 'cli',
+            instanceLabel: 'builder',
+            command: 'hermes',
+            vpnAlias: 'builder-01',
+          },
+        }),
+      ],
+      hostStatusByAlias: {
+        'builder-01': {
+          tone: 'missing',
+          label: 'Builder 01 unreachable',
+          detail: 'SSH could not reach the host.',
+        },
+      },
+      bridgeHealth: { ok: true },
+      blueprint,
+    })
+
+    const hostItem = readiness.items.find((item) => item.id === 'hosts')
+    expect(hostItem?.tone).toBe('missing')
+    expect(hostItem?.detail).toContain('unreachable')
+  })
+
   it('adds a ready publish approval gate when the room encodes reviewed social release hooks', () => {
     const card = problem({
       preferredLaunchSurface: 'hybrid',

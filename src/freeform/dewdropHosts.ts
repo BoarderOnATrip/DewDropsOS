@@ -21,6 +21,8 @@ export type DewDropHostStatus = {
   detail: string
 }
 
+export type DewDropHostStatusByAlias = Record<string, DewDropHostStatus>
+
 const DEWDROP_HOSTS: readonly DewDropHostRecord[] = [
   {
     alias: 'builder-01',
@@ -108,6 +110,7 @@ export function describeDewDropHostStatus(
 
 export function summarizeDewDropHostBindings(
   runtimes: readonly AgentRuntimeBinding[],
+  liveStatusesByAlias: DewDropHostStatusByAlias = {},
 ): {
   tone: DewDropHostTone
   detail: string
@@ -121,7 +124,9 @@ export function summarizeDewDropHostBindings(
 
   let unknownCount = 0
   let localCount = 0
-  const labels = new Map<string, number>()
+  let uncheckedCount = 0
+  let unreachableCount = 0
+  const hostCounts = new Map<string, number>()
 
   for (const runtime of runtimes) {
     const hostAlias = runtime.vpnAlias?.trim()
@@ -134,7 +139,7 @@ export function summarizeDewDropHostBindings(
       unknownCount += 1
       continue
     }
-    labels.set(host.label, (labels.get(host.label) ?? 0) + 1)
+    hostCounts.set(host.alias, (hostCounts.get(host.alias) ?? 0) + 1)
   }
 
   if (unknownCount > 0) {
@@ -148,8 +153,40 @@ export function summarizeDewDropHostBindings(
   if (localCount > 0) {
     parts.push(`${localCount} local`)
   }
-  for (const [label, count] of labels.entries()) {
-    parts.push(`${count} ${label}`)
+  for (const [alias, count] of hostCounts.entries()) {
+    const host = getDewDropHost(alias)
+    const liveStatus = liveStatusesByAlias[alias]
+    if (!host) continue
+    if (!liveStatus) {
+      uncheckedCount += 1
+      parts.push(`${count} on ${host.label} pending check`)
+      continue
+    }
+    if (liveStatus.tone === 'missing') {
+      unreachableCount += 1
+      parts.push(`${count} on ${host.label} unreachable`)
+      continue
+    }
+    if (liveStatus.tone === 'attention') {
+      uncheckedCount += 1
+      parts.push(`${count} on ${host.label} checking`)
+      continue
+    }
+    parts.push(`${count} on ${host.label} reachable`)
+  }
+
+  if (unreachableCount > 0) {
+    return {
+      tone: 'missing',
+      detail: parts.length > 0 ? parts.join(', ') : 'One or more DewDrop hosts are unreachable.',
+    }
+  }
+
+  if (uncheckedCount > 0) {
+    return {
+      tone: 'attention',
+      detail: parts.length > 0 ? parts.join(', ') : 'Worker hosts are still being checked.',
+    }
   }
 
   return {

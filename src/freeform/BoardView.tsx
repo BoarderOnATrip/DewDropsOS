@@ -1345,6 +1345,7 @@ export default function BoardView({
         workspaceMode,
         agentCount: agentsInProblemSwarm(card.id, cards, wires).length,
         agentCards: agentsInProblemSwarm(card.id, cards, wires),
+        hostStatusByAlias: workerHostStatusByAlias,
         bridgeHealth,
         blueprint,
       })
@@ -1364,7 +1365,7 @@ export default function BoardView({
     }
 
     return next
-  }, [bridgeHealth, cards, wires, workspaceMode])
+  }, [bridgeHealth, cards, workerHostStatusByAlias, wires, workspaceMode])
 
   const selectedProblemRoomWidth = selectedProblem
     ? Math.round(selectedProblem.problemBaseWidth ?? selectedProblem.width)
@@ -1394,11 +1395,12 @@ export default function BoardView({
             workspaceMode,
             agentCount: selectedProblemAgents.length,
             agentCards: selectedProblemAgents,
+            hostStatusByAlias: workerHostStatusByAlias,
             bridgeHealth,
             blueprint: buildProblemSessionBlueprint(selectedProblem, workspaceMode),
           }))
         : null,
-    [bridgeHealth, problemSessionMetaById, selectedProblem, selectedProblemAgents, workspaceMode],
+    [bridgeHealth, problemSessionMetaById, selectedProblem, selectedProblemAgents, workerHostStatusByAlias, workspaceMode],
   )
   const selectedProblemPaperclipCompanyId = selectedProblem?.paperclipCompanyId ?? ''
   const selectedProblemPaperclipProjectId = selectedProblem?.paperclipProjectId ?? ''
@@ -1852,6 +1854,39 @@ export default function BoardView({
     })
   }, [syncWorkerTerminalState, withWorkerTerminalBusy])
 
+  const refreshWorkerHostStatus = useCallback(async (
+    hostAlias: string,
+    options?: { quiet?: boolean },
+  ) => {
+    const normalizedHost = hostAlias.trim()
+    if (!normalizedHost) return
+    try {
+      const result = await checkWorkerTerminalHost(normalizedHost)
+      setWorkerHostStatusByAlias((prev) => ({
+        ...prev,
+        [normalizedHost]: hostStatusFromCheck(normalizedHost, result.ok, result.detail, result.latencyMs),
+      }))
+      if (!options?.quiet) {
+        setBoardNotice({
+          text: result.ok ? `${normalizedHost} is reachable.` : `${normalizedHost} is not reachable.`,
+          tone: result.ok ? 'ok' : 'error',
+        })
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : `Could not check ${normalizedHost}.`
+      setWorkerHostStatusByAlias((prev) => ({
+        ...prev,
+        [normalizedHost]: hostStatusFromCheck(normalizedHost, false, detail, 0),
+      }))
+      if (!options?.quiet) {
+        setBoardNotice({
+          text: detail,
+          tone: 'error',
+        })
+      }
+    }
+  }, [hostStatusFromCheck])
+
   const checkWorkerTerminalAgentHost = useCallback(async (agentId: string, hostAlias: string) => {
     const normalizedHost = hostAlias.trim()
     if (!normalizedHost) {
@@ -1862,29 +1897,9 @@ export default function BoardView({
       return
     }
     await withWorkerTerminalBusy(agentId, async () => {
-      try {
-        const result = await checkWorkerTerminalHost(normalizedHost)
-        setWorkerHostStatusByAlias((prev) => ({
-          ...prev,
-          [normalizedHost]: hostStatusFromCheck(normalizedHost, result.ok, result.detail, result.latencyMs),
-        }))
-        setBoardNotice({
-          text: result.ok ? `${normalizedHost} is reachable.` : `${normalizedHost} is not reachable.`,
-          tone: result.ok ? 'ok' : 'error',
-        })
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : `Could not check ${normalizedHost}.`
-        setWorkerHostStatusByAlias((prev) => ({
-          ...prev,
-          [normalizedHost]: hostStatusFromCheck(normalizedHost, false, detail, 0),
-        }))
-        setBoardNotice({
-          text: detail,
-          tone: 'error',
-        })
-      }
+      await refreshWorkerHostStatus(normalizedHost)
     })
-  }, [hostStatusFromCheck, withWorkerTerminalBusy])
+  }, [refreshWorkerHostStatus, withWorkerTerminalBusy])
 
   const startWorkerTerminalAgent = useCallback(async (agentId: string) => {
     const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
@@ -2056,6 +2071,28 @@ export default function BoardView({
       void startWorkerTerminalAgent(agent.id)
     }
   }, [cards, isJsdomRuntime, startWorkerTerminalAgent, workerTerminalBusyIds])
+
+  useEffect(() => {
+    if (isJsdomRuntime || !selectedProblem || selectedProblemAgents.length === 0) return
+    const hostAliases = [...new Set(
+      selectedProblemAgents
+        .map((agent) => agent.agentRuntime?.vpnAlias?.trim() || '')
+        .filter(Boolean),
+    )]
+    if (hostAliases.length === 0) return
+
+    const refreshAll = async () => {
+      await Promise.all(
+        hostAliases.map((hostAlias) => refreshWorkerHostStatus(hostAlias, { quiet: true }).catch(() => undefined)),
+      )
+    }
+
+    void refreshAll()
+    const intervalId = window.setInterval(() => {
+      void refreshAll()
+    }, 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [isJsdomRuntime, refreshWorkerHostStatus, selectedProblem, selectedProblemAgents])
 
   useEffect(() => {
     if (isJsdomRuntime || !selectedProblem || selectedProblemAgents.length === 0) return

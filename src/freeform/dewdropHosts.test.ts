@@ -45,13 +45,34 @@ describe('dewdropHosts', () => {
     expect(suggestions.map((host) => host.value)).not.toContain('gpu-01')
   })
 
-  it('summarizes known and local host bindings', () => {
+  it('treats unchecked remote hosts as attention', () => {
     const summary = summarizeDewDropHostBindings([
       runtime(),
       runtime({ vpnAlias: 'builder-01' }),
     ])
+
+    expect(summary.tone).toBe('attention')
+    expect(summary.detail).toContain('1 local')
+    expect(summary.detail).toContain('pending check')
+  })
+
+  it('summarizes known and local host bindings with live reachability', () => {
+    const summary = summarizeDewDropHostBindings(
+      [
+        runtime(),
+        runtime({ vpnAlias: 'builder-01' }),
+      ],
+      {
+        'builder-01': {
+          tone: 'ready',
+          label: 'Builder 01 reachable',
+          detail: 'SSH reached the host and the DewDrop route is available.',
+        },
+      },
+    )
+
     expect(summary.tone).toBe('ready')
     expect(summary.detail).toContain('1 local')
-    expect(summary.detail).toContain('1 Builder 01')
+    expect(summary.detail).toContain('1 on Builder 01 reachable')
   })
 })

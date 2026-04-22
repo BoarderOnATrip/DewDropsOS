@@ -1,6 +1,7 @@
 import type { ButlerBridgeHealth } from '../lib/butlerBridge'
 import { agentRunsInCliTerminal, normalizeAgentRuntime, runtimeProfileLabel } from './agentRuntime'
 import { getCapabilityProfile } from './capabilityProfiles'
+import type { DewDropHostStatusByAlias } from './dewdropHosts'
 import { summarizeDewDropHostBindings } from './dewdropHosts'
 import { buildProblemApprovalHooks, formatSocialTargetLabel } from './launchMetadata'
 import type { ProblemSessionBlueprint } from './sessionBlueprint'
@@ -178,7 +179,10 @@ function agentRuntimeItem(agentCards: readonly WorkflowCard[]): SessionReadiness
   )
 }
 
-function hostBindingItem(agentCards: readonly WorkflowCard[]): SessionReadinessItem {
+function hostBindingItem(
+  agentCards: readonly WorkflowCard[],
+  hostStatusByAlias: DewDropHostStatusByAlias = {},
+): SessionReadinessItem {
   if (agentCards.length === 0) {
     return item(
       'hosts',
@@ -191,7 +195,7 @@ function hostBindingItem(agentCards: readonly WorkflowCard[]): SessionReadinessI
   const runtimes = agentCards.map((card) =>
     normalizeAgentRuntime(card.agentRuntime, { cardId: card.id, title: card.title }),
   )
-  const hostSummary = summarizeDewDropHostBindings(runtimes)
+  const hostSummary = summarizeDewDropHostBindings(runtimes, hostStatusByAlias)
   return item(
     'hosts',
     'Worker hosts',
@@ -206,11 +210,19 @@ export function buildProblemSessionReadiness(
     workspaceMode: DewDropsWorkspaceMode
     agentCount: number
     agentCards?: readonly WorkflowCard[]
+    hostStatusByAlias?: DewDropHostStatusByAlias
     bridgeHealth: ButlerBridgeHealth | null
     blueprint: ProblemSessionBlueprint
   },
 ): ProblemSessionReadiness {
-  const { agentCount, agentCards = [], bridgeHealth, blueprint, workspaceMode } = options
+  const {
+    agentCount,
+    agentCards = [],
+    hostStatusByAlias = {},
+    bridgeHealth,
+    blueprint,
+    workspaceMode,
+  } = options
   const approvalHooks = buildProblemApprovalHooks(problem)
   const hasExplicitMemory =
     !!problem.memoryWing?.trim() && !!problem.memoryRoom?.trim() && !!problem.memoryContextSummary?.trim()
@@ -234,7 +246,7 @@ export function buildProblemSessionReadiness(
         : 'No agents are assigned yet. Pull a team into the problem room before launch.',
     ),
     agentRuntimeItem(agentCards),
-    hostBindingItem(agentCards),
+    hostBindingItem(agentCards, hostStatusByAlias),
     item(
       'memory',
       'Memory palace binding',
