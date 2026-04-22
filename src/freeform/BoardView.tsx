@@ -123,6 +123,7 @@ import {
   formatVisualMemoryPalaceDraft,
   parseVisualMemoryPalaceDraft,
 } from './visualMemoryPalace'
+import { buildProblemModelPacket } from './modelPacket'
 import { shouldDraggedAgentStayAttached } from './dragDetach'
 import {
   ENVELOPE_STAY_SLACK,
@@ -1464,6 +1465,15 @@ export default function BoardView({
         : null,
     [problemSessionMetaById, selectedProblem, workspaceMode],
   )
+  const selectedProblemModelPacket = useMemo(
+    () =>
+      selectedProblem
+        ? buildProblemModelPacket(selectedProblem, cards, wires, workspaceMode, {
+            template: launchTemplate,
+          })
+        : null,
+    [cards, launchTemplate, selectedProblem, wires, workspaceMode],
+  )
   const selectedProblemReadiness = useMemo(
     () =>
       selectedProblem
@@ -2489,10 +2499,11 @@ export default function BoardView({
   )
 
   const selectedProblemLaunchBrief = useMemo(() => {
-    if (!selectedProblem || !selectedProblemBlueprint || !launchObjective.trim()) return ''
+    if (!selectedProblem || !selectedProblemBlueprint || !selectedProblemModelPacket || !launchObjective.trim()) return ''
     return [
       selectedProblem.title.trim(),
       `Template: ${launchTemplate}`,
+      `Model route: ${selectedProblemModelPacket.route.strategy} via ${selectedProblemModelPacket.route.primary} (fallback ${selectedProblemModelPacket.route.fallback})`,
       ...(selectedProblem.paperclipCompanyId
         ? [
             `Paperclip company: ${selectedProblem.paperclipCompanyId}`,
@@ -2508,10 +2519,13 @@ export default function BoardView({
       'Objective:',
       launchObjective.trim(),
       '',
+      'Model packet:',
+      selectedProblemModelPacket.packetText,
+      '',
       'Handoff packet:',
       selectedProblemBlueprint.handoffText,
     ].join('\n')
-  }, [launchObjective, launchTemplate, selectedProblem, selectedProblemBlueprint])
+  }, [launchObjective, launchTemplate, selectedProblem, selectedProblemBlueprint, selectedProblemModelPacket])
 
   const copyInspectorText = useCallback(async (label: string, text: string) => {
     if (!text.trim()) {
@@ -2787,6 +2801,9 @@ export default function BoardView({
       const blueprint = buildProblemSessionBlueprint(problemForLaunch, workspaceMode)
       const briefPacket = buildProblemBriefPacket(problemForLaunch)
       const launchMetadata = buildProblemLaunchMetadata(problemForLaunch)
+      const modelPacket = buildProblemModelPacket(problemForLaunch, cards, wires, workspaceMode, {
+        template: launchTemplate,
+      })
       let nextSettings = bridgeSettings
       const isLocalBridge = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(bridgeSettings.url.trim())
       if (!nextSettings.token.trim() && isLocalBridge) {
@@ -2827,6 +2844,14 @@ export default function BoardView({
           launch_surface: blueprint.launchSurface,
           capability_profile_id: blueprint.capabilityProfileId,
           swarm_recipe_id: blueprint.swarmRecipeId,
+          model_route_strategy: modelPacket.route.strategy,
+          model_route_primary: modelPacket.route.primary,
+          model_route_fallback: modelPacket.route.fallback,
+          model_route_reason: modelPacket.route.reason,
+          model_packet_version: modelPacket.version,
+          model_packet_lines: modelPacket.stats.lineCount,
+          model_packet_chars: modelPacket.stats.charCount,
+          model_packet: modelPacket.packetText,
           rtk_basis: {
             ...blueprint.rtkBasis,
             brief_version: briefPacket?.briefVersion ?? blueprint.rtkBasis.brief_version,
@@ -2880,7 +2905,7 @@ export default function BoardView({
     } finally {
       setLaunchBusy(false)
     }
-  }, [bridgeSettings, launchObjective, launchTemplate, refreshRuns, selectedProblem, selectedProblemAgents, workspaceMode])
+  }, [bridgeSettings, cards, launchObjective, launchTemplate, refreshRuns, selectedProblem, selectedProblemAgents, wires, workspaceMode])
 
   const stopCurrentSwarmRun = useCallback(async () => {
     if (!currentRunId) {
@@ -3798,6 +3823,48 @@ export default function BoardView({
                       rows={5}
                     />
                   </label>
+                  {selectedProblemModelPacket ? (
+                    <>
+                      <p className="freeform-toolbar-panel-hint">
+                        Packet route: <strong>{selectedProblemModelPacket.route.strategy}</strong>
+                        {' '}
+                        via
+                        {' '}
+                        <strong>{selectedProblemModelPacket.route.primary}</strong>
+                        {' '}
+                        with
+                        {' '}
+                        <strong>{selectedProblemModelPacket.stats.lineCount}</strong>
+                        {' '}
+                        lines /
+                        {' '}
+                        <strong>{selectedProblemModelPacket.stats.charCount}</strong>
+                        {' '}
+                        chars. {selectedProblemModelPacket.route.reason}
+                      </p>
+
+                      <div className="freeform-toolbar-panel-actions">
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => setLaunchObjective(selectedProblemModelPacket.objectiveText)}
+                          disabled={!selectedProblem || launchBusy}
+                        >
+                          Reset from packet
+                        </button>
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => {
+                            void copyInspectorText('model packet', selectedProblemModelPacket.packetText)
+                          }}
+                          disabled={!selectedProblem}
+                        >
+                          Copy packet
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
 
                   <div className="freeform-toolbar-panel-actions">
                     <button

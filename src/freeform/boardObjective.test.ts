@@ -5,7 +5,7 @@ import { buildProblemSwarmObjective } from './boardObjective'
 const wires: BoardWire[] = []
 
 describe('buildProblemSwarmObjective', () => {
-  it('includes title, mission, open questions, and swarm titles', () => {
+  it('builds a compact objective that points the model at attached structured context', () => {
     const pid = 'p1'
     const problem: WorkflowCard = {
       id: pid,
@@ -55,20 +55,9 @@ describe('buildProblemSwarmObjective', () => {
     ]
     const text = buildProblemSwarmObjective(problem, cards, wires, 'phone')
     expect(text).toContain('Launch')
-    expect(text).toContain('Ship the board.')
-    expect(text).toContain('API key?')
-    expect(text).toContain('Worker')
-    expect(text).toContain('Worker terminals')
-    expect(text).toContain('terminal in .')
-    expect(text).toContain('Memory palace context')
-    expect(text).toContain('launch-wing')
-    expect(text).toContain('Visual loci')
-    expect(text).toContain('North Star (north_star)')
-    expect(text).toContain('Device handoff packet')
-    expect(text).toContain('Phone relay')
-    expect(text).toContain('Paperclip routing')
-    expect(text).toContain('company-1')
-    expect(text).toContain('agent-review')
-    expect(text).toContain('active execution control plane')
+    expect(text).toContain('Task: Ship the board.')
+    expect(text).toContain('Resolve: API key?')
+    expect(text).toContain('Workers: Worker(shell)')
+    expect(text).toContain('Context: use attached BriefPacket, RTK basis, handoff packet, and source refs.')
   })
 })
