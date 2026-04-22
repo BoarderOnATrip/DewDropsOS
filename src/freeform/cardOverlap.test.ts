@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { WorkflowCard } from './types'
 import {
   agentSubUnionBounds,
+  bestGroupProblemTarget,
   bestParentAgentTarget,
   bestProblemOverlap,
   countSubagents,
@@ -54,6 +55,28 @@ describe('bestProblemOverlap', () => {
     const p1 = problem('p1', { x: 0, y: 0, width: 10, height: 10 })
     const p2 = problem('p2', { x: 0, y: 0, width: 30, height: 30 })
     expect(bestProblemOverlap(a, [p1, p2])?.id).toBe('p2')
+  })
+})
+
+describe('bestGroupProblemTarget', () => {
+  it('keeps a shared problem target even when only part of the dragged group overlaps it', () => {
+    const cards: WorkflowCard[] = [
+      problem('p1', { x: 100, y: 100, width: 260, height: 180 }),
+      agent('a1', { x: 130, y: 130, width: 120, height: 80 }),
+      agent('a2', { x: 390, y: 130, width: 120, height: 80 }),
+    ]
+    expect(bestGroupProblemTarget(new Set(['a1', 'a2']), cards)?.id).toBe('p1')
+  })
+
+  it('picks the dominant problem across the dragged group', () => {
+    const cards: WorkflowCard[] = [
+      problem('p1', { x: 0, y: 0, width: 140, height: 120 }),
+      problem('p2', { x: 220, y: 0, width: 260, height: 220 }),
+      agent('a1', { x: 20, y: 20, width: 120, height: 80 }),
+      agent('a2', { x: 250, y: 30, width: 140, height: 100 }),
+      agent('a3', { x: 280, y: 100, width: 120, height: 80 }),
+    ]
+    expect(bestGroupProblemTarget(new Set(['a1', 'a2', 'a3']), cards)?.id).toBe('p2')
   })
 })
 

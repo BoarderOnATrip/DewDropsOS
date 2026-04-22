@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BoardCamera, WorkflowCard } from './types'
 import {
   cardWorldBounds,
+  fitCameraToCards,
   marqueeViewportToWorldAabb,
   screenToWorldFlat,
   worldRectsIntersect,
@@ -94,5 +95,44 @@ describe('cardWorldBounds', () => {
     }
     const b = cardWorldBounds(c)
     expect(b).toEqual({ l: 10, t: 20, r: 110, b: 64 })
+  })
+})
+
+describe('fitCameraToCards', () => {
+  it('centers the camera on the card union and chooses a visible zoom', () => {
+    const cards: WorkflowCard[] = [
+      {
+        id: 'p1',
+        title: 'Problem',
+        expanded: true,
+        color: '#fff',
+        kind: 'problem',
+        x: 100,
+        y: 80,
+        width: 220,
+        height: 160,
+      },
+      {
+        id: 'a1',
+        title: 'Agent',
+        expanded: false,
+        color: '#0af',
+        kind: 'agent',
+        x: 460,
+        y: 260,
+        width: 140,
+        height: 44,
+        assignedToProblemId: null,
+      },
+    ]
+
+    const camera = fitCameraToCards(cards, 1200, 800)
+    expect(camera.x).toBe(350)
+    expect(camera.y).toBe(192)
+    expect(camera.zoom).toBeGreaterThan(1)
+  })
+
+  it('returns a neutral camera when there are no cards', () => {
+    expect(fitCameraToCards([], 1200, 800)).toEqual({ x: 0, y: 0, zoom: 1 })
   })
 })

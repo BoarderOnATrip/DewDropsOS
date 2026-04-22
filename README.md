@@ -1,8 +1,12 @@
-# DewDrops
+# DewDrops Swarm OS
 
 Interactive **freeform board** for orchestrating problem hubs and agent cards: pan/zoom, drag-to-combine swarms, marquee selection, local persistence in the browser, and optional swarm launch into a local Butler bridge.
 
 The shipped app surface is the freeform board in [src/freeform](./src/freeform). Older or dormant explorations live under [experiments](./experiments) so they do not read like active product code.
+
+DewDrops Swarm OS is the public product name. Existing code and older notes may still use the shorter `DewDrops` label while the runtime and data model stay stable.
+
+The app now also includes a first `World OS` shell in [src/world](./src/world): an Earth -> Wing -> Actor -> Room entry surface that frames DewDrops Swarm OS as a spatial operating system instead of a board-only tool. The higher-level product direction is captured in [docs/world-os.md](./docs/world-os.md).
 
 ## Run
 
@@ -37,7 +41,7 @@ Board layout, camera, and card positions are **auto-saved** (debounced) under th
 
 ## AI / multi-agent contributors
 
-If **Cursor** and **Codex** (or any two agents) both touch this tree, read **[`AGENTS.md`](./AGENTS.md)** for an explicit file-level work split. Product sync rules for Butler ↔ DewDrops live in the repo root **[`BOUNDARY_SPEC.md`](../BOUNDARY_SPEC.md)**.
+If **Cursor** and **Codex** (or any two agents) both touch this tree, read **[`AGENTS.md`](./AGENTS.md)** for an explicit file-level work split. Product sync rules for Butler ↔ DewDrops Swarm OS live in the repo root **[`BOUNDARY_SPEC.md`](../BOUNDARY_SPEC.md)**.
 
 ## Butler bridge prototype
 
@@ -49,7 +53,13 @@ If Butler-os is running its local bridge on `http://127.0.0.1:8765`, the toolbar
 - launch into Butler
 - inspect recent runs for the selected room
 
-For local browser development, the Butler bridge accepts `localhost` requests without a manual token unless local token enforcement has been explicitly enabled. DewDrops persists any bridge URL/token you enter in browser storage.
+For local browser development, the Butler bridge accepts `localhost` requests without a manual token unless local token enforcement has been explicitly enabled. DewDrops Swarm OS persists any bridge URL/token you enter in browser storage.
+
+## Surface Routes
+
+- `/` opens the World OS shell
+- `/?surface=desktop` opens the board directly
+- `/?surface=phone` opens the phone relay
 
 ## What this is
 

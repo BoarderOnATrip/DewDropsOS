@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { flushSync } from 'react-dom'
-import type { BoardCamera, BoardWire, WorkflowCard } from './types'
+import type {
+  AgentRuntimeProfile,
+  ArtifactStatus,
+  BoardCamera,
+  BoardWire,
+  DewDropsWorkspaceMode,
+  WorkflowCard,
+} from './types'
 import { hedgerowsDeltaSquadCards, hedgerowsPresetAgentCount } from './presets/hedgerowsDeltaSquad'
+import { PRESET_REGISTRY, type PresetEntry } from './presets/index'
+import { PresetPicker } from './components/PresetPicker'
 import {
   ButlerBridgeError,
   createSwarmContract,
@@ -22,7 +31,25 @@ import {
   type ButlerSwarmTemplate,
 } from '../lib/butlerBridge'
 import {
-  clearPersistedBoard,
+  PaperclipBridgeError,
+  addPaperclipIssueComment,
+  createPaperclipIssue,
+  invokePaperclipAgent,
+  listPaperclipAgents,
+  listPaperclipCompanies,
+  listPaperclipIssueWorkProducts,
+  listPaperclipProjects,
+  loadPaperclipBridgeSettings,
+  savePaperclipBridgeSettings,
+  updatePaperclipWorkProduct,
+  upsertPaperclipIssueDocument,
+  type PaperclipAgent,
+  type PaperclipBridgeSettings,
+  type PaperclipCompany,
+  type PaperclipProject,
+} from '../lib/paperclipBridge'
+import {
+  buildBoardPayload,
   inferAgentSummonCount,
   loadPersistedBoard,
   parseBoardJsonString,
@@ -32,17 +59,72 @@ import {
 } from './persistBoard'
 import { buildProblemSwarmObjective } from './boardObjective'
 import { touchPairMetrics } from './boardTouch'
+import { bumpBriefVersion, compileBriefPacket } from './briefCompiler'
+import { normalizeBriefSpec } from './briefSpec'
+import {
+  defaultCommandForRuntimeProfile,
+  defaultModelTagForRuntimeProfile,
+  defaultRuntimeForProfile,
+  defaultTerminalRuntime,
+  normalizeAgentRuntime,
+  normalizeAgentRuntimeCard,
+} from './agentRuntime'
+import {
+  checkWorkerTerminalHost,
+  createWorkerTerminalSession,
+  getWorkerTerminalSession,
+  type WorkerTerminalArtifact,
+  workerTerminalArtifactFileUrl,
+  listWorkerTerminalSessionArtifacts,
+  listWorkerTerminalSessions,
+  resizeWorkerTerminalSession,
+  sendWorkerTerminalSessionInput,
+  stopWorkerTerminalSession,
+  workerTerminalStateFromSession,
+} from '../lib/workerTerminalBridge'
+import { getDewDropHost, type DewDropHostStatus } from './dewdropHosts'
+import { applyCapabilityPack, getCapabilityPack, listCapabilityPacks, resolveCapabilityPackId, syncCapabilityPack } from './capabilityPacks'
+import { listCapabilityProfiles } from './capabilityProfiles'
+import {
+  buildBriefCompartmentOptions,
+  createBriefCompartmentAsset,
+  createBriefCompartmentAssetFromRunArtifact,
+} from './briefCompartments'
+import { DewDropTerminalCard } from './components/DewDropTerminalCard'
 import { ProblemSwarmInspector } from './components/ProblemSwarmInspector'
 import { SwarmEnvelopeLayer } from './components/SwarmEnvelopeLayer'
 import { SwarmRunList } from './components/SwarmRunList'
-import { WorkflowCardView } from './components/WorkflowCardView'
-import { agentSubUnionBounds, bestParentAgentTarget, bestProblemOverlap } from './cardOverlap'
+import { WorkflowCardView, type ProblemSessionSummary } from './components/WorkflowCardView'
+import { agentSubUnionBounds, bestGroupProblemTarget, bestParentAgentTarget, bestProblemOverlap } from './cardOverlap'
 import { DEFAULT_KANBAN_MIN_AGENT_WIDTH, cardDisplayHeight, magneticKanbanDockPosition } from './kanbanGeometry'
 import { reflowHubKanbanLayout, reflowSubagentLayout } from './kanbanReflow'
 import { openQuestionsForCard } from './openQuestions'
 import { applyReleaseNod } from './releaseNod'
+import {
+  buildDewDropRunLedgerEntry,
+  buildRunLedgerEntry,
+  updateRunArtifactStatus,
+  upsertRunLedgerEntry,
+} from './runLedger'
+import { planProblemAutoContinuation } from './autoContinuation'
 import { clampNumber, swarmRunIsActive } from './runFormat'
+import { buildProblemSessionReadiness } from './sessionReadiness'
+import {
+  buildProblemSessionBlueprint,
+  formatAnchorInput,
+  LAUNCH_SURFACE_OPTIONS,
+  parseAnchorInput,
+  WORKSPACE_MODE_OPTIONS,
+} from './sessionBlueprint'
+import { buildProblemLaunchMetadata } from './launchMetadata'
 import { buildSwarmContractAgents } from './swarmContractAgents'
+import { getSwarmRecipe, listSwarmRecipes } from './swarmRecipes'
+import {
+  buildVisualMemoryPalace,
+  formatVisualMemoryPalaceDraft,
+  parseVisualMemoryPalaceDraft,
+} from './visualMemoryPalace'
+import { buildProblemModelPacket } from './modelPacket'
 import { shouldDraggedAgentStayAttached } from './dragDetach'
 import {
   ENVELOPE_STAY_SLACK,
@@ -58,12 +140,32 @@ import {
 import { stepProblemOverlapEjection } from './problemOverlapEjection'
 import {
   cardWorldBounds,
+  fitCameraToCards,
   marqueeViewportToWorldAabb,
   worldRectsIntersect,
   zoomAtPoint,
 } from './viewportGeometry'
 import { eventPathHitsBoardCard, pointerEventTargetEl } from './pointerDom'
 import './board.css'
+
+function paperclipReviewStateForArtifactStatus(status: ArtifactStatus) {
+  if (status === 'accepted') return 'approved' as const
+  if (status === 'rejected') return 'changes_requested' as const
+  return 'needs_board_review' as const
+}
+
+function paperclipStatusForArtifactStatus(status: ArtifactStatus) {
+  if (status === 'accepted') return 'approved' as const
+  if (status === 'rejected') return 'changes_requested' as const
+  return 'ready_for_review' as const
+}
+
+function executionWorkspaceModeForRecipe(recipeId: string | undefined) {
+  const recipe = recipeId ? getSwarmRecipe(recipeId) : undefined
+  if (!recipe?.worktreeStrategy) return undefined
+  if (recipe.worktreeStrategy === 'shared') return 'shared_workspace' as const
+  return 'isolated_workspace' as const
+}
 
 let cardId = 0
 function newCardId(): string {
@@ -84,22 +186,171 @@ function boardCardIdAtClientPoint(clientX: number, clientY: number): string | nu
   return null
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  if (typeof document === 'undefined' || !document.body) {
+    throw new Error('Clipboard is unavailable in this browser session.')
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = typeof document.execCommand === 'function' ? document.execCommand('copy') : false
+  document.body.removeChild(textarea)
+  if (!copied) {
+    throw new Error('Clipboard is unavailable in this browser session.')
+  }
+}
+
+async function readTextFromClipboard(): Promise<string> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+    return navigator.clipboard.readText()
+  }
+  throw new Error('Clipboard reading is unavailable in this browser session.')
+}
+
+function findRunLedgerEntry(problem: WorkflowCard, runId: string) {
+  return problem.runLedger?.find((entry) => entry.runId === runId)
+}
+
+function findRunLedgerArtifact(problem: WorkflowCard, runId: string, artifactId: string) {
+  return findRunLedgerEntry(problem, runId)?.artifacts.find((artifact) => artifact.id === artifactId)
+}
+
+function syncMirroredBriefcaseArtifact(
+  problem: WorkflowCard,
+  runId: string,
+  artifactId: string,
+  status: ArtifactStatus,
+) {
+  const currentAssets = problem.briefCompartmentAssets ?? []
+  const existingMirror = currentAssets.find(
+    (asset) => asset.sourceRunId === runId && asset.sourceArtifactId === artifactId,
+  )
+  if (status !== 'accepted') {
+    const nextAssets = currentAssets.filter(
+      (asset) => !(asset.sourceRunId === runId && asset.sourceArtifactId === artifactId),
+    )
+    return nextAssets.length > 0 ? nextAssets : undefined
+  }
+
+  if (existingMirror) {
+    return currentAssets
+  }
+
+  const artifact = findRunLedgerArtifact(problem, runId, artifactId)
+  if (!artifact) {
+    return currentAssets.length > 0 ? currentAssets : undefined
+  }
+
+  const mirroredAsset = createBriefCompartmentAssetFromRunArtifact(problem, artifact, {
+    runId,
+  })
+  return [...currentAssets, mirroredAsset]
+}
+
 /** Default board = Hedgerows 2.0 Δ squad (virtual company preset). */
 const SEED_CARDS: WorkflowCard[] = hedgerowsDeltaSquadCards()
 
 type BootState = { cards: WorkflowCard[]; camera: BoardCamera; wires: BoardWire[] }
-let bootStateMemo: BootState | null = null
+type BoardViewProps = {
+  bootState?: BootState
+  bootId?: string
+  syncToken?: number | string
+  workspaceId?: string
+  workspaceName?: string
+  workspaceOptions?: Array<{ id: string; name: string }>
+  focusedProblemId?: string | null
+  onFocusedProblemChange?: (problemId: string | null) => void
+  onWorkspaceChange?: (workspaceId: string) => void
+  onCreateWorkspace?: (presetId: string) => void
+  workspacePresets?: readonly PresetEntry[]
+  onDuplicateWorkspace?: () => void
+  onRenameWorkspace?: (name: string) => void
+  onDeleteWorkspace?: () => void
+  onOpenWorldShell?: (problemId: string | null) => void
+  onOpenPhoneRelay?: (problemId: string | null) => void
+}
 
-function getBootStateOnce(): BootState {
-  if (!bootStateMemo) {
-    const p = loadPersistedBoard()
-    bootStateMemo = {
-      cards: p?.cards ?? SEED_CARDS,
-      camera: p?.camera ?? { x: 0, y: 0, zoom: 1 },
-      wires: p?.wires ?? [],
-    }
+function getDefaultBootState(): BootState {
+  const p = loadPersistedBoard()
+  return {
+    cards: p?.cards ?? SEED_CARDS,
+    camera: p?.camera ?? { x: 0, y: 0, zoom: 1 },
+    wires: p?.wires ?? [],
   }
-  return bootStateMemo
+}
+
+function syncProblemBriefBindings(problem: WorkflowCard): WorkflowCard {
+  if (problem.kind !== 'problem' || !problem.briefSpec) return problem
+  const briefSpec = normalizeBriefSpec(problem.briefSpec, problem.briefSpec.id ?? `brief-${problem.id}`)
+  const capabilityProfileId = problem.capabilityProfileId?.trim() || undefined
+  const swarmRecipeId = problem.swarmRecipeId?.trim() || undefined
+  if (
+    briefSpec.capabilityProfileId === capabilityProfileId &&
+    briefSpec.swarmRecipeId === swarmRecipeId
+  ) {
+    return problem.briefSpec === briefSpec ? problem : { ...problem, briefSpec }
+  }
+  return {
+    ...problem,
+    briefSpec: {
+      ...briefSpec,
+      capabilityProfileId,
+      swarmRecipeId,
+    },
+  }
+}
+
+function editableProblemBriefSpec(problem: WorkflowCard) {
+  const briefSpec = normalizeBriefSpec(problem.briefSpec, `brief-${problem.id}`)
+  return {
+    ...briefSpec,
+    capabilityProfileId: problem.capabilityProfileId?.trim() || briefSpec.capabilityProfileId,
+    swarmRecipeId: problem.swarmRecipeId?.trim() || briefSpec.swarmRecipeId,
+  }
+}
+
+function normalizeBoardCards(cards: readonly WorkflowCard[]): WorkflowCard[] {
+  return cards.map((card) => {
+    let next = card
+    if (next.kind === 'agent') {
+      next = normalizeAgentRuntimeCard(next)
+    }
+    if (next.kind === 'problem' && next.briefSpec) {
+      const briefSpec = normalizeBriefSpec(next.briefSpec, next.briefSpec.id ?? `brief-${next.id}`)
+      if (briefSpec !== next.briefSpec) {
+        next = { ...next, briefSpec }
+      }
+    }
+    return next
+  })
+}
+
+function isTerminalTypingTarget(target: EventTarget | null): boolean {
+  const element = target instanceof HTMLElement ? target : null
+  if (!element) return false
+  return !!element.closest(
+    'input, textarea, select, [contenteditable="true"], .freeform-terminal-surface, .freeform-terminal-canvas, .xterm, .xterm-helper-textarea',
+  )
+}
+
+function buildProblemBriefPacket(problem: WorkflowCard) {
+  return compileBriefPacket(syncProblemBriefBindings(problem), problem.butlerRoomId?.trim() || problem.id)
+}
+
+function problemCardById(cards: readonly WorkflowCard[], problemId: string | null | undefined): WorkflowCard | null {
+  if (!problemId) return null
+  const card = cards.find((item) => item.id === problemId && item.kind === 'problem')
+  return card ?? null
 }
 
 const SWARM_TEMPLATE_OPTIONS: Array<{ value: ButlerSwarmTemplate; label: string }> = [
@@ -110,7 +361,105 @@ const SWARM_TEMPLATE_OPTIONS: Array<{ value: ButlerSwarmTemplate; label: string 
   { value: 'relationship', label: 'Relationship' },
 ]
 
+const CAPABILITY_PROFILE_OPTIONS = listCapabilityProfiles().map((profile) => ({
+  value: profile.id,
+  label: profile.label,
+  detail: profile.description,
+  hint: profile.budgetHint ? `Budget: ${profile.budgetHint}` : undefined,
+}))
+
+const CAPABILITY_PACK_OPTIONS = listCapabilityPacks().map((pack) => ({
+  value: pack.id,
+  label: pack.label,
+  detail: pack.description,
+  summary: `${pack.template} • ${pack.capabilityProfileId} • ${pack.swarmRecipeId}`,
+}))
+
+const SWARM_RECIPE_OPTIONS = listSwarmRecipes().map((recipe) => ({
+  value: recipe.id,
+  label: recipe.label,
+  detail: recipe.description,
+  template: recipe.template,
+}))
+
+const BULK_SUMMON_COUNT = 48
+const BULK_SUMMON_COLORS = [
+  '#5ac8fa',
+  '#64d2ff',
+  '#30d158',
+  '#ff9f0a',
+  '#bf5af2',
+  '#ffd60a',
+  '#0a84ff',
+  '#5e5ce6',
+  '#ff375f',
+  '#66d4cf',
+  '#ff6482',
+  '#c4c4c4',
+]
+
+const DEWDROP_NODE_TEMPLATES: ReadonlyArray<{
+  id: 'shell' | 'hermes' | 'browser' | 'playwright' | 'local-model'
+  label: string
+  notice: string
+  titlePrefix: string
+  color: string
+  profile: AgentRuntimeProfile
+}> = [
+  {
+    id: 'shell',
+    label: 'New terminal',
+    notice: 'New terminal ready',
+    titlePrefix: 'Terminal',
+    color: '#af52de',
+    profile: 'custom',
+  },
+  {
+    id: 'hermes',
+    label: 'New Hermes',
+    notice: 'New Hermes node ready',
+    titlePrefix: 'Hermes',
+    color: '#30d158',
+    profile: 'hermes',
+  },
+  {
+    id: 'browser',
+    label: 'New browser',
+    notice: 'New browser node ready',
+    titlePrefix: 'Browser',
+    color: '#0a84ff',
+    profile: 'browser-harness',
+  },
+  {
+    id: 'playwright',
+    label: 'New Playwright',
+    notice: 'New Playwright node ready',
+    titlePrefix: 'Playwright',
+    color: '#ffd60a',
+    profile: 'playwright',
+  },
+  {
+    id: 'local-model',
+    label: 'New local model',
+    notice: 'New local model node ready',
+    titlePrefix: 'Local model',
+    color: '#ff9f0a',
+    profile: 'ollama',
+  },
+] as const
+
+function dewDropNodeTemplate(
+  id: (typeof DEWDROP_NODE_TEMPLATES)[number]['id'],
+): (typeof DEWDROP_NODE_TEMPLATES)[number] {
+  const template = DEWDROP_NODE_TEMPLATES.find((entry) => entry.id === id)
+  if (!template) {
+    throw new Error(`Unknown DewDrop node template: ${id}`)
+  }
+  return template
+}
+
 const TOOLBAR_PANEL_OPEN_KEY = 'dewdrops-toolbar-panel-open'
+const WORKSPACE_MODE_KEY = 'dewdrops-workspace-mode'
 
 function loadToolbarPanelOpen(): boolean {
   if (typeof localStorage === 'undefined') return false
@@ -130,19 +479,78 @@ function saveToolbarPanelOpen(next: boolean): void {
   }
 }
 
+function loadWorkspaceMode(): DewDropsWorkspaceMode {
+  if (typeof localStorage === 'undefined') return 'desktop'
+  try {
+    const raw = localStorage.getItem(WORKSPACE_MODE_KEY)
+    if (raw === 'phone' || raw === 'palace' || raw === 'desktop') return raw
+  } catch {
+    // Ignore localStorage failures.
+  }
+  return 'desktop'
+}
+
+function saveWorkspaceMode(next: DewDropsWorkspaceMode): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(WORKSPACE_MODE_KEY, next)
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+function cameraShowsAnyCards(
+  camera: BoardCamera,
+  cards: WorkflowCard[],
+  viewportWidth: number,
+  viewportHeight: number,
+): boolean {
+  if (cards.length === 0 || viewportWidth <= 0 || viewportHeight <= 0) return true
+  const viewportBounds = marqueeViewportToWorldAabb(
+    0,
+    0,
+    viewportWidth,
+    viewportHeight,
+    viewportWidth,
+    viewportHeight,
+    camera,
+  )
+  return cards.some((card) => worldRectsIntersect(cardWorldBounds(card), viewportBounds))
+}
+
 type SelectionTraceEntry = {
   id: number
   label: string
   detail: string
 }
 
-export default function BoardView() {
+export default function BoardView({
+  bootState,
+  bootId = 'default',
+  syncToken,
+  workspaceId,
+  workspaceName,
+  workspaceOptions = [],
+  focusedProblemId,
+  onFocusedProblemChange,
+  onWorkspaceChange,
+  onCreateWorkspace,
+  workspacePresets = PRESET_REGISTRY,
+  onDuplicateWorkspace,
+  onRenameWorkspace,
+  onDeleteWorkspace,
+  onOpenWorldShell,
+  onOpenPhoneRelay,
+}: BoardViewProps) {
+  const isJsdomRuntime = typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent)
+  const initialBootState = bootState ?? getDefaultBootState()
+  const normalizedInitialCards = useMemo(() => normalizeBoardCards(initialBootState.cards), [initialBootState.cards])
   const viewportRef = useRef<HTMLDivElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
   const [size, setSize] = useState({ w: 960, h: 640 })
-  const [camera, setCamera] = useState<BoardCamera>(() => getBootStateOnce().camera)
-  const [cards, setCards] = useState<WorkflowCard[]>(() => getBootStateOnce().cards)
-  const [wires, setWires] = useState<BoardWire[]>(() => getBootStateOnce().wires)
+  const [camera, setCamera] = useState<BoardCamera>(() => initialBootState.camera)
+  const [cards, setCards] = useState<WorkflowCard[]>(() => normalizedInitialCards)
+  const [wires, setWires] = useState<BoardWire[]>(() => initialBootState.wires)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [handshakeFocus, setHandshakeFocus] = useState<{ agentId: string; problemId: string } | null>(
     null,
@@ -151,23 +559,43 @@ export default function BoardView() {
   const [bridgeSettings, setBridgeSettings] = useState<ButlerBridgeSettings>(() => loadButlerBridgeSettings())
   const [bridgeHealth, setBridgeHealth] = useState<ButlerBridgeHealth | null>(null)
   const [bridgeBusy, setBridgeBusy] = useState(false)
+  const [paperclipSettings, setPaperclipSettings] = useState<PaperclipBridgeSettings>(() =>
+    loadPaperclipBridgeSettings(),
+  )
+  const [paperclipBusy, setPaperclipBusy] = useState(false)
+  const [paperclipOnline, setPaperclipOnline] = useState(false)
+  const [paperclipCompanies, setPaperclipCompanies] = useState<PaperclipCompany[]>([])
+  const [paperclipProjects, setPaperclipProjects] = useState<PaperclipProject[]>([])
+  const [paperclipAgents, setPaperclipAgents] = useState<PaperclipAgent[]>([])
+  const [paperclipLaunchBusy, setPaperclipLaunchBusy] = useState(false)
   const [launchBusy, setLaunchBusy] = useState(false)
   const [stopBusy, setStopBusy] = useState(false)
+  const [workerTerminalBusyIds, setWorkerTerminalBusyIds] = useState<string[]>([])
+  const [workerHostStatusByAlias, setWorkerHostStatusByAlias] = useState<Record<string, DewDropHostStatus>>({})
   const [recentRuns, setRecentRuns] = useState<ButlerSwarmRun[]>([])
   const [currentRunId, setCurrentRunId] = useState('')
   const [currentRunReport, setCurrentRunReport] = useState<ButlerSwarmRunReport | null>(null)
   const [currentRunReportBusy, setCurrentRunReportBusy] = useState(false)
   const [launchTemplate, setLaunchTemplate] = useState<ButlerSwarmTemplate>('planning')
   const [launchObjective, setLaunchObjective] = useState('')
+  const [workspaceMode, setWorkspaceMode] = useState<DewDropsWorkspaceMode>(() => loadWorkspaceMode())
   const [toolbarPanelOpen, setToolbarPanelOpen] = useState(() => loadToolbarPanelOpen())
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false)
   const [traceEnabled, setTraceEnabled] = useState(() => {
     if (typeof window === 'undefined') return false
+    if (typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent)) return false
     return window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
   })
   const [selectionTrace, setSelectionTrace] = useState<SelectionTraceEntry[]>([])
-
+  const returnedDewDropRunSignaturesRef = useRef(new Map<string, string>())
+  const autoContinuationAttemptRef = useRef(
+    new Map<string, { sourceRunId: string; nextRetryAt: number }>(),
+  )
+  const sizeRef = useRef(size)
+  const cameraRef = useRef(camera)
   const cardsRef = useRef(cards)
   const wiresRef = useRef(wires)
+
   const traceSeqRef = useRef(0)
   /** Hub overlap ejection pauses while these cards are being dragged or resized. */
   const ejectionDragIdsRef = useRef<Set<string>>(new Set())
@@ -184,6 +612,12 @@ export default function BoardView() {
   const persistBridgeSettings = useCallback((next: ButlerBridgeSettings) => {
     const normalized = saveButlerBridgeSettings(next)
     setBridgeSettings(normalized)
+    return normalized
+  }, [])
+
+  const persistPaperclipSettings = useCallback((next: PaperclipBridgeSettings) => {
+    const normalized = savePaperclipBridgeSettings(next)
+    setPaperclipSettings(normalized)
     return normalized
   }, [])
 
@@ -237,6 +671,10 @@ export default function BoardView() {
   }, [toolbarPanelOpen])
 
   useEffect(() => {
+    saveWorkspaceMode(workspaceMode)
+  }, [workspaceMode])
+
+  useEffect(() => {
     const clearEjectionDrag = () => {
       ejectionDragIdsRef.current.clear()
       suppressOverlapEjectionRef.current = false
@@ -250,6 +688,7 @@ export default function BoardView() {
   }, [])
 
   useEffect(() => {
+    if (isJsdomRuntime) return
     let raf = 0
     let last = performance.now()
     const loop = (now: number) => {
@@ -265,7 +704,7 @@ export default function BoardView() {
     }
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
-  }, [])
+  }, [isJsdomRuntime])
 
   const swarmLayoutKey = useMemo(() => {
     const agentBits = cards
@@ -293,14 +732,46 @@ export default function BoardView() {
     })
   }, [swarmLayoutKey, wires])
 
+  const agentSummon = useRef(inferAgentSummonCount(normalizedInitialCards))
+  
   useEffect(() => {
+    if (isJsdomRuntime) return
     const id = window.setTimeout(() => {
       savePersistedBoard(camera, cards, wires)
     }, 500)
     return () => window.clearTimeout(id)
-  }, [camera, cards, wires])
+  }, [camera, cards, isJsdomRuntime, wires])
 
-  const agentSummon = useRef(inferAgentSummonCount(getBootStateOnce().cards))
+  useEffect(() => {
+    const next = bootState ?? getDefaultBootState()
+    const normalizedNextCards = normalizeBoardCards(next.cards)
+    const currentSnapshot = JSON.stringify(
+      buildBoardPayload(cameraRef.current, cardsRef.current, wiresRef.current),
+    )
+    const nextSnapshot = JSON.stringify(buildBoardPayload(next.camera, normalizedNextCards, next.wires))
+    if (currentSnapshot === nextSnapshot) return
+    if (handshakeTimerRef.current) {
+      clearTimeout(handshakeTimerRef.current)
+      handshakeTimerRef.current = null
+    }
+    const restoredCamera = cameraShowsAnyCards(
+      next.camera,
+      normalizedNextCards,
+      sizeRef.current.w,
+      sizeRef.current.h,
+    )
+      ? next.camera
+      : fitCameraToCards(normalizedNextCards, sizeRef.current.w, sizeRef.current.h)
+    setCamera(restoredCamera)
+    setCards(normalizedNextCards)
+    setWires(next.wires)
+    setSelectedIds([])
+    setMarquee(null)
+    setHandshakeFocus(null)
+    setCurrentRunId('')
+    setCurrentRunReport(null)
+    agentSummon.current = inferAgentSummonCount(normalizedNextCards)
+  }, [bootId, bootState, syncToken])
   const [isPanning, setIsPanning] = useState(false)
   const [spaceHeld, setSpaceHeld] = useState(false)
 
@@ -318,9 +789,6 @@ export default function BoardView() {
     w: number
     h: number
   } | null>(null)
-  const sizeRef = useRef(size)
-  const cameraRef = useRef(camera)
-
   useEffect(() => {
     cardsRef.current = cards
     wiresRef.current = wires
@@ -343,8 +811,7 @@ export default function BoardView() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return
-      const t = e.target as HTMLElement
-      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
+      if (isTerminalTypingTarget(e.target)) return
       e.preventDefault()
       spaceDown.current = true
       setSpaceHeld(true)
@@ -366,6 +833,7 @@ export default function BoardView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Escape') return
+      if (isTerminalTypingTarget(e.target)) return
       setSelectedIds([])
       setMarquee(null)
     }
@@ -568,15 +1036,26 @@ export default function BoardView() {
             .filter((c) => worldRectsIntersect(cardWorldBounds(c), wr))
             .map((c) => c.id)
           pushSelectionTrace('marquee.complete', hits.length > 0 ? hits.join(', ') : 'no hits')
-          if (hits.length > 0) {
-            flushSync(() => {
+          flushSync(() => {
+            if (hits.length > 0) {
               setSelectedIds((prev) =>
                 e.shiftKey ? [...new Set([...prev, ...hits])] : hits,
               )
-            })
-          }
+              return
+            }
+            if (!e.shiftKey) {
+              setSelectedIds([])
+            }
+          })
         } else {
-          pushSelectionTrace('marquee.preserve', 'kept selection')
+          if (!e.shiftKey) {
+            pushSelectionTrace('marquee.clear', 'selection cleared')
+            flushSync(() => {
+              setSelectedIds([])
+            })
+          } else {
+            pushSelectionTrace('marquee.preserve', 'kept selection')
+          }
         }
       }
       setMarquee(null)
@@ -588,31 +1067,83 @@ export default function BoardView() {
     }
   }
 
-  const addAgentAt = (wx: number, wy: number) => {
+  const spawnNodeAt = useCallback((
+    wx: number,
+    wy: number,
+    template: (typeof DEWDROP_NODE_TEMPLATES)[number] = DEWDROP_NODE_TEMPLATES[0]!,
+  ) => {
     agentSummon.current += 1
     const n = agentSummon.current
-    const w = 176
-    const h = 112
+    const id = newCardId()
+    const w = 360
+    const h = 320
     setCards((list) => [
       ...list,
       {
-        id: newCardId(),
+        id,
         x: wx - w / 2,
         y: wy - h / 2,
         width: w,
         height: h,
-        title: `Agent ${n}`,
+        title: `${template.titlePrefix} ${n}`,
         expanded: true,
-        color: '#af52de',
+        color: template.color,
         kind: 'agent',
         assignedToProblemId: null,
         parentAgentId: null,
         management: 'manual',
+        agentRuntime: defaultRuntimeForProfile(id, `${template.titlePrefix} ${n}`, template.profile),
       },
     ])
-  }
+    setSelectedIds([id])
+    viewportRef.current?.focus()
+    return id
+  }, [])
 
-  const resolveAgentAssignment = useCallback((agentId: string) => {
+  const spawnNodeInView = useCallback((template: (typeof DEWDROP_NODE_TEMPLATES)[number]) => {
+    spawnNodeAt(camera.x, camera.y, template)
+    setBoardNotice({ text: template.notice, tone: 'ok' })
+  }, [camera.x, camera.y, spawnNodeAt])
+
+  const spawnTerminalInView = useCallback(() => {
+    spawnNodeInView(dewDropNodeTemplate('shell'))
+  }, [spawnNodeInView])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat) return
+      if (isTerminalTypingTarget(e.target)) return
+      const key = e.key.toLowerCase()
+      if (key === 't') {
+        e.preventDefault()
+        spawnTerminalInView()
+        return
+      }
+      if (key === 'h') {
+        e.preventDefault()
+        spawnNodeInView(dewDropNodeTemplate('hermes'))
+        return
+      }
+      if (key === 'b') {
+        e.preventDefault()
+        spawnNodeInView(dewDropNodeTemplate('browser'))
+        return
+      }
+      if (key === 'p') {
+        e.preventDefault()
+        spawnNodeInView(dewDropNodeTemplate('playwright'))
+        return
+      }
+      if (key === 'l') {
+        e.preventDefault()
+        spawnNodeInView(dewDropNodeTemplate('local-model'))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [spawnNodeInView, spawnTerminalInView])
+
+  const resolveAgentAssignment = useCallback((agentId: string, fallbackProblemId: string | null = null) => {
     let handshakeProblemId: string | null = null
     setCards((list) => {
       const agent = list.find((c) => c.id === agentId && c.kind === 'agent')
@@ -634,10 +1165,48 @@ export default function BoardView() {
           return !!(u && pointInBounds(cx, cy, expandBounds(u, ENVELOPE_STAY_SLACK)))
         })()
 
-      let nextParent: string | null
-      let nextPid: string | null
+      const prevParentProblemId =
+        prevParent
+          ? (list.find((c) => c.id === prevParent && c.kind === 'agent')?.assignedToProblemId ?? null)
+          : null
 
-      if (subSticky && prevParent) {
+      let nextParent: string | null = null
+      let nextPid: string | null = null
+
+      const chooseFreshTarget = () => {
+        const pArea = probHit?.area ?? 0
+        const nArea = parHit?.area ?? 0
+        if (pArea > 0) {
+          if (nArea >= pArea && parHit) {
+            nextParent = parHit.id
+            const par = list.find((c) => c.id === parHit.id && c.kind === 'agent')
+            nextPid = par?.assignedToProblemId ?? null
+            return
+          }
+          nextParent = null
+          nextPid = probHit!.id
+          return
+        }
+        if (fallbackProblemId) {
+          nextParent = null
+          nextPid = fallbackProblemId
+          return
+        }
+        if (nArea > 0 && parHit) {
+          nextParent = parHit.id
+          const par = list.find((c) => c.id === parHit.id && c.kind === 'agent')
+          nextPid = par?.assignedToProblemId ?? null
+          return
+        }
+        nextParent = null
+        nextPid = null
+      }
+
+      if (
+        subSticky &&
+        prevParent &&
+        (!fallbackProblemId || fallbackProblemId === prevParentProblemId)
+      ) {
         nextParent = prevParent
         const par = list.find((c) => c.id === prevParent && c.kind === 'agent')
         nextPid = par?.assignedToProblemId ?? null
@@ -645,44 +1214,18 @@ export default function BoardView() {
         const union = swarmUnionBounds(prevPid, list, wiresNow)
         const prevProblem = list.find((c) => c.id === prevPid && c.kind === 'problem')
         const prevSlack = prevProblem ? problemEnvelopeStaySlack(prevProblem) : ENVELOPE_STAY_SLACK
-        if (union && pointInBounds(cx, cy, expandBounds(union, prevSlack))) {
+        if (
+          union &&
+          pointInBounds(cx, cy, expandBounds(union, prevSlack)) &&
+          (!fallbackProblemId || fallbackProblemId === prevPid)
+        ) {
           nextPid = prevPid
           nextParent = null
         } else {
-          const pArea = probHit?.area ?? 0
-          const nArea = parHit?.area ?? 0
-          if (pArea === 0 && nArea === 0) {
-            nextParent = null
-            nextPid = null
-          } else if (nArea >= pArea && parHit) {
-            nextParent = parHit.id
-            const par = list.find((c) => c.id === parHit.id && c.kind === 'agent')
-            nextPid = par?.assignedToProblemId ?? null
-          } else if (probHit) {
-            nextParent = null
-            nextPid = probHit.id
-          } else {
-            nextParent = null
-            nextPid = null
-          }
+          chooseFreshTarget()
         }
       } else {
-        const pArea = probHit?.area ?? 0
-        const nArea = parHit?.area ?? 0
-        if (pArea === 0 && nArea === 0) {
-          nextParent = null
-          nextPid = null
-        } else if (nArea >= pArea && parHit) {
-          nextParent = parHit.id
-          const par = list.find((c) => c.id === parHit.id && c.kind === 'agent')
-          nextPid = par?.assignedToProblemId ?? null
-        } else if (probHit) {
-          nextParent = null
-          nextPid = probHit.id
-        } else {
-          nextParent = null
-          nextPid = null
-        }
+        chooseFreshTarget()
       }
 
       if (prevPid === nextPid && prevParent === nextParent) {
@@ -728,7 +1271,6 @@ export default function BoardView() {
       clearTimeout(handshakeTimerRef.current)
       handshakeTimerRef.current = null
     }
-    clearPersistedBoard()
     setCards(hedgerowsDeltaSquadCards())
     setCamera({ x: 0, y: 0, zoom: 0.78 })
     setWires([])
@@ -780,7 +1322,7 @@ export default function BoardView() {
         }
         const parsed = parseBoardJsonString(text)
         if (!parsed) {
-          setBoardNotice({ text: 'Not a valid DewDrops board file (expected v1 JSON)', tone: 'error' })
+          setBoardNotice({ text: 'Not a valid DewDrops Swarm OS board file (expected v1 JSON)', tone: 'error' })
           return
         }
         applyImportedBoard(parsed)
@@ -808,12 +1350,104 @@ export default function BoardView() {
     [cards, selectedIds],
   )
 
-  const selectedProblem = selectedProblems.length === 1 ? selectedProblems[0] : null
+  const selectedAgents = useMemo(
+    () =>
+      selectedIds
+        .map((id) => cards.find((card) => card.id === id && card.kind === 'agent'))
+        .filter((card): card is WorkflowCard => !!card),
+    [cards, selectedIds],
+  )
+
+  const selectedAgent = useMemo(
+    () => (selectedAgents.length === 1 ? selectedAgents[0] : null),
+    [selectedAgents],
+  )
+
+  const selectedProblem = useMemo(() => {
+    if (selectedProblems.length === 1) return selectedProblems[0]
+    if (selectedProblems.length > 1) return null
+    if (selectedIds.length === 0) return null
+
+    const assignedProblemIds = [
+      ...new Set(
+        selectedAgents
+          .map((agent) => agent.assignedToProblemId)
+          .filter((problemId): problemId is string => !!problemId),
+      ),
+    ]
+
+    if (assignedProblemIds.length === 1) {
+      return problemCardById(cards, assignedProblemIds[0])
+    }
+    if (assignedProblemIds.length > 1) return null
+
+    return problemCardById(cards, focusedProblemId)
+  }, [cards, focusedProblemId, selectedAgents, selectedIds.length, selectedProblems])
+  const lastFocusedProblemSelectionRef = useRef<string | null>(focusedProblemId ?? null)
+
+  useEffect(() => {
+    if (selectedProblem?.id) {
+      onFocusedProblemChange?.(selectedProblem.id)
+      return
+    }
+    if (selectedIds.length === 0 && !focusedProblemId) {
+      onFocusedProblemChange?.(null)
+    }
+  }, [focusedProblemId, onFocusedProblemChange, selectedIds.length, selectedProblem?.id])
+
+  useEffect(() => {
+    if (!focusedProblemId) return
+    const hasProblem = cards.some((card) => card.id === focusedProblemId && card.kind === 'problem')
+    if (!hasProblem) return
+    const focusChanged = lastFocusedProblemSelectionRef.current !== focusedProblemId
+    lastFocusedProblemSelectionRef.current = focusedProblemId
+    if (!focusChanged && selectedIds.length > 0) return
+    setSelectedIds((prev) => (prev.length === 1 && prev[0] === focusedProblemId ? prev : [focusedProblemId]))
+  }, [cards, focusedProblemId, selectedIds.length])
 
   const selectedProblemAgents = useMemo(
     () => (selectedProblem ? agentsInProblemSwarm(selectedProblem.id, cards, wires) : []),
     [cards, selectedProblem, wires],
   )
+
+  const problemSessionMetaById = useMemo(() => {
+    const next = new Map<
+      string,
+      {
+        blueprint: ReturnType<typeof buildProblemSessionBlueprint>
+        readiness: ReturnType<typeof buildProblemSessionReadiness>
+        summary: ProblemSessionSummary
+      }
+    >()
+
+    for (const card of cards) {
+      if (card.kind !== 'problem') continue
+      const blueprint = buildProblemSessionBlueprint(card, workspaceMode)
+      const readiness = buildProblemSessionReadiness(card, {
+        workspaceMode,
+        agentCount: agentsInProblemSwarm(card.id, cards, wires).length,
+        agentCards: agentsInProblemSwarm(card.id, cards, wires),
+        hostStatusByAlias: workerHostStatusByAlias,
+        bridgeHealth,
+        blueprint,
+      })
+
+      next.set(card.id, {
+        blueprint,
+        readiness,
+        summary: {
+          workspaceLabel: blueprint.workspaceLabel,
+          launchSurfaceLabel: blueprint.launchSurfaceLabel,
+          memoryLabel: `${blueprint.memoryWing}/${blueprint.memoryRoom}`,
+          anchorCount: blueprint.anchors.length,
+          readinessLabel: readiness.label,
+          readinessTone: readiness.tone,
+        },
+      })
+    }
+
+    return next
+  }, [bridgeHealth, cards, workerHostStatusByAlias, wires, workspaceMode])
 
   const selectedProblemRoomWidth = selectedProblem
     ? Math.round(selectedProblem.problemBaseWidth ?? selectedProblem.width)
@@ -827,6 +1461,112 @@ export default function BoardView() {
   const selectedProblemAgentWidth = selectedProblem
     ? Math.round(selectedProblem.swarmAgentMinWidth ?? DEFAULT_KANBAN_MIN_AGENT_WIDTH)
     : DEFAULT_KANBAN_MIN_AGENT_WIDTH
+  const selectedProblemBlueprint = useMemo(
+    () =>
+      selectedProblem
+        ? (problemSessionMetaById.get(selectedProblem.id)?.blueprint ??
+          buildProblemSessionBlueprint(selectedProblem, workspaceMode))
+        : null,
+    [problemSessionMetaById, selectedProblem, workspaceMode],
+  )
+  const selectedProblemModelPacket = useMemo(
+    () =>
+      selectedProblem
+        ? buildProblemModelPacket(selectedProblem, cards, wires, workspaceMode, {
+            template: launchTemplate,
+          })
+        : null,
+    [cards, launchTemplate, selectedProblem, wires, workspaceMode],
+  )
+  const selectedProblemReadiness = useMemo(
+    () =>
+      selectedProblem
+        ? (problemSessionMetaById.get(selectedProblem.id)?.readiness ??
+          buildProblemSessionReadiness(selectedProblem, {
+            workspaceMode,
+            agentCount: selectedProblemAgents.length,
+            agentCards: selectedProblemAgents,
+            hostStatusByAlias: workerHostStatusByAlias,
+            bridgeHealth,
+            blueprint: buildProblemSessionBlueprint(selectedProblem, workspaceMode),
+          }))
+        : null,
+    [bridgeHealth, problemSessionMetaById, selectedProblem, selectedProblemAgents, workerHostStatusByAlias, workspaceMode],
+  )
+  const selectedProblemPaperclipCompanyId = selectedProblem?.paperclipCompanyId ?? ''
+  const selectedProblemPaperclipProjectId = selectedProblem?.paperclipProjectId ?? ''
+  const selectedProblemPaperclipAgentIds = useMemo(
+    () => selectedProblem?.paperclipAgentIds ?? [],
+    [selectedProblem?.paperclipAgentIds],
+  )
+  const selectedProblemPaperclipLeadAgentId = selectedProblem?.paperclipLeadAgentId ?? ''
+  const selectedProblemRunLedger = selectedProblem?.runLedger ?? []
+  const selectedProblemBriefSpec = useMemo(
+    () => (selectedProblem ? editableProblemBriefSpec(selectedProblem) : null),
+    [selectedProblem],
+  )
+  const activeTerminalCardId = selectedIds.length === 1 && selectedAgent ? selectedAgent.id : null
+  const selectedProblemId = selectedProblem?.id ?? ''
+  const selectedProblemBriefVersion = selectedProblem?.briefVersion ?? 0
+  const selectedProblemCompartmentOptions = useMemo(
+    () => (selectedProblem ? buildBriefCompartmentOptions(selectedProblem) : []),
+    [selectedProblem],
+  )
+
+  const summonAgentBatch = useCallback((count = BULK_SUMMON_COUNT) => {
+    const cardWidth = 176
+    const cardHeight = 112
+    const gapX = 28
+    const gapY = 24
+    const cols = Math.min(6, Math.max(1, Math.ceil(Math.sqrt(count))))
+    const totalWidth = cols * cardWidth + (cols - 1) * gapX
+    const rows = Math.ceil(count / cols)
+    const totalHeight = rows * cardHeight + (rows - 1) * gapY
+    const anchorX = selectedProblem
+      ? selectedProblem.x + selectedProblem.width / 2
+      : cameraRef.current.x
+    const startX = anchorX - totalWidth / 2
+    const startY = selectedProblem
+      ? selectedProblem.y + cardDisplayHeight(selectedProblem) + 72
+      : cameraRef.current.y - totalHeight / 2
+
+    const nextIds: string[] = []
+    setCards((list) => {
+      const next = [...list]
+      for (let i = 0; i < count; i += 1) {
+        agentSummon.current += 1
+        const n = agentSummon.current
+        const id = newCardId()
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        const staggerX = row % 2 === 0 ? 0 : Math.round((cardWidth + gapX) * 0.18)
+        nextIds.push(id)
+        next.push({
+          id,
+          x: startX + col * (cardWidth + gapX) + staggerX,
+          y: startY + row * (cardHeight + gapY),
+          width: cardWidth,
+          height: cardHeight,
+          title: `Terminal ${n}`,
+          expanded: true,
+          color: BULK_SUMMON_COLORS[(n - 1) % BULK_SUMMON_COLORS.length]!,
+          kind: 'agent',
+          assignedToProblemId: null,
+          parentAgentId: null,
+          management: 'manual',
+          agentRuntime: defaultTerminalRuntime(id, `Terminal ${n}`),
+        })
+      }
+      return next
+    })
+    setSelectedIds(nextIds)
+    setBoardNotice({
+      text: selectedProblem
+        ? `Spun up ${count} terminals near “${selectedProblem.title}”`
+        : `Spun up ${count} terminals near the current view`,
+      tone: 'ok',
+    })
+  }, [selectedProblem])
 
   const selectedProblemDraftKey = useMemo(() => {
     if (!selectedProblem) return ''
@@ -835,19 +1575,60 @@ export default function BoardView() {
       selectedProblem.title,
       selectedProblem.mission ?? '',
       selectedProblem.swarmTemplate ?? '',
+      selectedProblem.preferredLaunchSurface ?? '',
+      selectedProblem.memoryWing ?? '',
+      selectedProblem.memoryRoom ?? '',
+      selectedProblem.memoryContextSummary ?? '',
+      formatAnchorInput(selectedProblem.memoryAnchors),
+      formatVisualMemoryPalaceDraft(buildVisualMemoryPalace(selectedProblem)),
+      (selectedProblem.briefCompartmentAssets ?? [])
+        .map((asset) => `${asset.id}:${asset.name}:${asset.compartmentLabel}:${asset.organizeStatus}`)
+        .join('|'),
+      selectedProblem.phoneRelayBrief ?? '',
+      selectedProblem.desktopSessionBrief ?? '',
       (selectedProblem.openQuestions ?? []).join('|'),
-      selectedProblemAgents.map((agent) => `${agent.id}:${agent.title}`).join('|'),
+      selectedProblemAgents
+        .map((agent) => {
+          const runtime = normalizeAgentRuntime(agent.agentRuntime, {
+            cardId: agent.id,
+            title: agent.title,
+          })
+          return [
+            agent.id,
+            agent.title,
+            runtime.kind,
+            runtime.profile,
+            runtime.transport,
+            runtime.instanceLabel,
+            runtime.command ?? '',
+            runtime.vpnAlias ?? '',
+            runtime.workspaceRoot ?? '',
+            runtime.sessionPolicy?.allowNetwork ? '1' : '0',
+            runtime.sessionPolicy?.maxSteps ?? '',
+            runtime.sessionPolicy?.maxRuntimeMs ?? '',
+            (runtime.sessionPolicy?.writableRoots ?? []).join(','),
+            (runtime.sessionPolicy?.requiresApprovalFor ?? []).join(','),
+            runtime.sessionState?.status ?? '',
+          ].join(':')
+        })
+        .join('|'),
+      workspaceMode,
     ].join('::')
-  }, [selectedProblem, selectedProblemAgents])
+  }, [selectedProblem, selectedProblemAgents, workspaceMode])
 
   useEffect(() => {
     if (!selectedProblem) {
       setLaunchObjective('')
       return
     }
-    setLaunchTemplate((selectedProblem.swarmTemplate as ButlerSwarmTemplate | undefined) ?? 'planning')
-    setLaunchObjective(buildProblemSwarmObjective(selectedProblem, cards, wires))
-  }, [cards, selectedProblem, selectedProblemDraftKey, wires])
+    const recipeTemplate = selectedProblem.swarmRecipeId
+      ? getSwarmRecipe(selectedProblem.swarmRecipeId)?.template
+      : undefined
+    setLaunchTemplate(
+      recipeTemplate ?? (selectedProblem.swarmTemplate as ButlerSwarmTemplate | undefined) ?? 'planning',
+    )
+    setLaunchObjective(buildProblemSwarmObjective(selectedProblem, cards, wires, workspaceMode))
+  }, [cards, selectedProblem, selectedProblemDraftKey, wires, workspaceMode])
 
   const visibleRuns = useMemo(() => {
     if (selectedProblem?.butlerRoomId) {
@@ -856,6 +1637,11 @@ export default function BoardView() {
     }
     return recentRuns.slice(0, 6)
   }, [recentRuns, selectedProblem?.butlerRoomId])
+
+  const selectedProblemAutoContinuationPlan = useMemo(() => {
+    if (!selectedProblem) return null
+    return planProblemAutoContinuation(selectedProblem, cards, wires, visibleRuns, workspaceMode)
+  }, [cards, selectedProblem, visibleRuns, wires, workspaceMode])
 
   const latestProblemRunById = useMemo(() => {
     const next = new Map<string, ButlerSwarmRun>()
@@ -939,7 +1725,68 @@ export default function BoardView() {
     }
   }, [bridgeSettings, currentRunId])
 
-  const updateSelectedProblemLayout = useCallback(
+  const syncSelectedProblemRunLedger = useCallback(
+    (runs: readonly ButlerSwarmRun[], report: ButlerSwarmRunReport | null) => {
+      if (!selectedProblem || selectedProblem.kind !== 'problem') return
+
+      const matchedRuns = selectedProblem.butlerRoomId
+        ? runs.filter((run) => run.room_id === selectedProblem.butlerRoomId)
+        : selectedProblem.lastSwarmRunId
+          ? runs.filter(
+              (run) =>
+                run.id === selectedProblem.lastSwarmRunId || run.run_id === selectedProblem.lastSwarmRunId,
+            )
+          : []
+
+      if (matchedRuns.length === 0) return
+
+      const orderedRuns = [...matchedRuns].reverse()
+      setCards((list) => {
+        let changed = false
+        const next = list.map((card) => {
+          if (card.id !== selectedProblem.id || card.kind !== 'problem') return card
+
+          const briefPacket = buildProblemBriefPacket(card)
+          let nextLedger = card.runLedger
+          for (const run of orderedRuns) {
+            const previousEntry =
+              nextLedger?.find((entry) => entry.runId === run.run_id || entry.runId === run.id) ?? undefined
+            nextLedger = upsertRunLedgerEntry(
+              nextLedger,
+              buildRunLedgerEntry(run, {
+                report:
+                  report && (report.run_id === run.run_id || report.run_id === run.id) ? report : undefined,
+                briefPacket: briefPacket ?? undefined,
+                briefSpecId: card.briefSpec?.id,
+                capabilityProfileId: card.capabilityProfileId,
+                swarmRecipeId: card.swarmRecipeId,
+                existingEntry: previousEntry,
+              }),
+            )
+          }
+
+          if (JSON.stringify(nextLedger ?? []) === JSON.stringify(card.runLedger ?? [])) {
+            return card
+          }
+
+          changed = true
+          return {
+            ...card,
+            runLedger: nextLedger,
+          }
+        })
+
+        return changed ? next : list
+      })
+    },
+    [selectedProblem],
+  )
+
+  useEffect(() => {
+    syncSelectedProblemRunLedger(recentRuns, currentRunReport)
+  }, [currentRunReport, recentRuns, syncSelectedProblemRunLedger])
+
+  const updateSelectedProblemCard = useCallback(
     (mutate: (problem: WorkflowCard) => WorkflowCard) => {
       if (!selectedProblem) return
       setCards((list) => {
@@ -956,6 +1803,754 @@ export default function BoardView() {
     },
     [selectedProblem],
   )
+
+  const updateAgentCardById = useCallback(
+    (agentId: string, mutate: (agent: WorkflowCard) => WorkflowCard) => {
+      setCards((list) => {
+        let changed = false
+        let touchedParentAgentId: string | null | undefined
+        let touchedProblemId: string | null | undefined
+        let next = list.map((card) => {
+          if (card.id !== agentId || card.kind !== 'agent') return card
+          const mutated = mutate(card)
+          if (mutated !== card) changed = true
+          touchedParentAgentId = mutated.parentAgentId
+          touchedProblemId = mutated.assignedToProblemId
+          return mutated
+        })
+        if (!changed) return list
+        if (touchedParentAgentId) {
+          next = reflowSubagentLayout(next, touchedParentAgentId)
+        } else if (touchedProblemId) {
+          next = reflowHubKanbanLayout(next, touchedProblemId)
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const updateAgentRuntimeById = useCallback(
+    (agentId: string, patch: Partial<NonNullable<WorkflowCard['agentRuntime']>>) => {
+      updateAgentCardById(agentId, (card) => {
+        const current = card.agentRuntime ?? defaultTerminalRuntime(card.id, card.title)
+        const nextProfile = patch.profile ?? current.profile
+        const nextModelTag =
+          nextProfile === 'ollama'
+            ? (('modelTag' in patch ? patch.modelTag : current.modelTag) || defaultModelTagForRuntimeProfile('ollama'))
+            : undefined
+        const currentDefaultCommand = defaultCommandForRuntimeProfile(current.profile, {
+          modelTag: current.modelTag,
+        })
+        const nextDefaultCommand = defaultCommandForRuntimeProfile(nextProfile, {
+          modelTag: nextModelTag,
+        })
+        const nextCommand =
+          patch.command !== undefined
+            ? patch.command
+            : !current.command || current.command === currentDefaultCommand
+              ? nextDefaultCommand
+              : current.command
+        return {
+          ...card,
+          agentRuntime: {
+            ...current,
+            ...patch,
+            kind: patch.kind ?? current.kind ?? 'terminal',
+            transport: patch.transport ?? current.transport ?? 'cli',
+            profile: nextProfile,
+            modelTag: nextModelTag,
+            command: nextCommand,
+          },
+        }
+      })
+    },
+    [updateAgentCardById],
+  )
+
+  const updateAgentTitleById = useCallback(
+    (agentId: string, title: string) => {
+      updateAgentCardById(agentId, (agent) => {
+        if (agent.title === title) return agent
+        const currentRuntime = agent.agentRuntime
+          ? normalizeAgentRuntime(agent.agentRuntime, { cardId: agent.id, title: agent.title })
+          : undefined
+        if (!currentRuntime) {
+          return {
+            ...agent,
+            title,
+          }
+        }
+        const currentDefaults = defaultTerminalRuntime(agent.id, agent.title)
+        const nextDefaults = defaultTerminalRuntime(agent.id, title || agent.id)
+        return {
+          ...agent,
+          title,
+          agentRuntime: {
+            ...currentRuntime,
+            instanceLabel:
+              currentRuntime.instanceLabel === currentDefaults.instanceLabel
+                ? nextDefaults.instanceLabel
+                : currentRuntime.instanceLabel,
+            vpnAlias:
+              currentRuntime.vpnAlias === currentDefaults.vpnAlias
+                ? nextDefaults.vpnAlias
+                : currentRuntime.vpnAlias,
+          },
+        }
+      })
+    },
+    [updateAgentCardById],
+  )
+
+  const syncWorkerTerminalState = useCallback((agentId: string, runtimeState?: ReturnType<typeof workerTerminalStateFromSession>) => {
+    if (!runtimeState) return
+    updateAgentRuntimeById(agentId, {
+      sessionState: runtimeState,
+    })
+  }, [updateAgentRuntimeById])
+
+  const withWorkerTerminalBusy = useCallback(async (agentId: string, action: () => Promise<void>) => {
+    setWorkerTerminalBusyIds((prev) => (prev.includes(agentId) ? prev : [...prev, agentId]))
+    try {
+      await action()
+    } finally {
+      setWorkerTerminalBusyIds((prev) => prev.filter((id) => id !== agentId))
+    }
+  }, [])
+
+  const hostStatusFromCheck = useCallback((
+    hostAlias: string,
+    ok: boolean,
+    detail: string,
+    latencyMs: number,
+  ): DewDropHostStatus => {
+    const host = getDewDropHost(hostAlias)
+    const suffix = latencyMs > 0 ? ` Checked in ${latencyMs}ms.` : ''
+    if (ok) {
+      return {
+        tone: 'ready',
+        label: host ? `${host.label} reachable` : `${hostAlias} reachable`,
+        detail: `${detail}${suffix}`,
+      }
+    }
+    return {
+      tone: 'missing',
+      label: host ? `${host.label} unreachable` : 'Host unreachable',
+      detail: `${detail}${suffix}`,
+    }
+  }, [])
+
+  const refreshWorkerTerminalAgent = useCallback(async (agentId: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    const runtime = agent?.agentRuntime ? normalizeAgentRuntime(agent.agentRuntime, { cardId: agent.id, title: agent.title }) : null
+    const sessionId = runtime?.sessionState?.sessionId
+    if (!sessionId) return
+    await withWorkerTerminalBusy(agentId, async () => {
+      try {
+        const session = await getWorkerTerminalSession(sessionId)
+        syncWorkerTerminalState(agentId, workerTerminalStateFromSession(session))
+      } catch (error) {
+        setBoardNotice({
+          text: error instanceof Error ? error.message : 'Unable to refresh the worker terminal.',
+          tone: 'error',
+        })
+      }
+    })
+  }, [syncWorkerTerminalState, withWorkerTerminalBusy])
+
+  const refreshWorkerHostStatus = useCallback(async (
+    hostAlias: string,
+    options?: { quiet?: boolean },
+  ) => {
+    const normalizedHost = hostAlias.trim()
+    if (!normalizedHost) return
+    try {
+      const result = await checkWorkerTerminalHost(normalizedHost)
+      setWorkerHostStatusByAlias((prev) => ({
+        ...prev,
+        [normalizedHost]: hostStatusFromCheck(normalizedHost, result.ok, result.detail, result.latencyMs),
+      }))
+      if (!options?.quiet) {
+        setBoardNotice({
+          text: result.ok ? `${normalizedHost} is reachable.` : `${normalizedHost} is not reachable.`,
+          tone: result.ok ? 'ok' : 'error',
+        })
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : `Could not check ${normalizedHost}.`
+      setWorkerHostStatusByAlias((prev) => ({
+        ...prev,
+        [normalizedHost]: hostStatusFromCheck(normalizedHost, false, detail, 0),
+      }))
+      if (!options?.quiet) {
+        setBoardNotice({
+          text: detail,
+          tone: 'error',
+        })
+      }
+    }
+  }, [hostStatusFromCheck])
+
+  const checkWorkerTerminalAgentHost = useCallback(async (agentId: string, hostAlias: string) => {
+    const normalizedHost = hostAlias.trim()
+    if (!normalizedHost) {
+      setBoardNotice({
+        text: 'This DewDrop is running locally, so there is no remote host to check.',
+        tone: 'ok',
+      })
+      return
+    }
+    await withWorkerTerminalBusy(agentId, async () => {
+      await refreshWorkerHostStatus(normalizedHost)
+    })
+  }, [refreshWorkerHostStatus, withWorkerTerminalBusy])
+
+  const startWorkerTerminalAgent = useCallback(async (agentId: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    if (!agent) return
+    const runtime = normalizeAgentRuntime(agent.agentRuntime, { cardId: agent.id, title: agent.title })
+    await withWorkerTerminalBusy(agentId, async () => {
+      try {
+        const session = await createWorkerTerminalSession({
+          agentId: agent.id,
+          title: agent.title,
+          runtime,
+          workspaceId: workspaceId ?? bootId,
+          problemId: agent.assignedToProblemId ?? selectedProblemId,
+        })
+        syncWorkerTerminalState(agentId, workerTerminalStateFromSession(session))
+        setBoardNotice({
+          text: `Started ${agent.title}.`,
+          tone: 'ok',
+        })
+      } catch (error) {
+        updateAgentRuntimeById(agentId, {
+          sessionState: {
+            status: 'failed',
+            currentTask: runtime.command,
+            logTail: [
+              ...(runtime.sessionState?.logTail ?? []),
+              error instanceof Error ? `[stderr] ${error.message}` : `[stderr] Unable to start ${agent.title}.`,
+            ],
+          },
+        })
+        setBoardNotice({
+          text: error instanceof Error ? error.message : `Unable to start ${agent.title}.`,
+          tone: 'error',
+        })
+      }
+    })
+  }, [bootId, selectedProblemId, syncWorkerTerminalState, updateAgentRuntimeById, withWorkerTerminalBusy, workspaceId])
+
+  const stopWorkerTerminalAgent = useCallback(async (agentId: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    const sessionId = agent?.agentRuntime?.sessionState?.sessionId
+    if (!agent || !sessionId) return
+    await withWorkerTerminalBusy(agentId, async () => {
+      try {
+        const session = await stopWorkerTerminalSession(sessionId)
+        syncWorkerTerminalState(agentId, workerTerminalStateFromSession(session))
+        setBoardNotice({
+          text: `Stopped ${agent.title}.`,
+          tone: 'ok',
+        })
+      } catch (error) {
+        setBoardNotice({
+          text: error instanceof Error ? error.message : `Unable to stop ${agent.title}.`,
+          tone: 'error',
+        })
+      }
+    })
+  }, [syncWorkerTerminalState, withWorkerTerminalBusy])
+
+  const sendWorkerTerminalInput = useCallback(async (agentId: string, input: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    const sessionId = agent?.agentRuntime?.sessionState?.sessionId
+    if (!agent || !sessionId || input.length === 0) return
+    try {
+      const session = await sendWorkerTerminalSessionInput(sessionId, input)
+      syncWorkerTerminalState(agentId, workerTerminalStateFromSession(session))
+    } catch (error) {
+      setBoardNotice({
+        text: error instanceof Error ? error.message : `Unable to send input to ${agent.title}.`,
+        tone: 'error',
+      })
+    }
+  }, [syncWorkerTerminalState])
+
+  const relayClipboardToWorkerTerminal = useCallback(async (agentId: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    const sessionId = agent?.agentRuntime?.sessionState?.sessionId
+    if (!agent || !sessionId) {
+      setBoardNotice({
+        text: 'Start the DewDrop before relaying clipboard content into it.',
+        tone: 'error',
+      })
+      return
+    }
+    await withWorkerTerminalBusy(agentId, async () => {
+      try {
+        const text = await readTextFromClipboard()
+        if (!text) {
+          setBoardNotice({
+            text: 'Clipboard is empty.',
+            tone: 'error',
+          })
+          return
+        }
+        await sendWorkerTerminalInput(agentId, text)
+        setBoardNotice({
+          text: `Relayed clipboard into ${agent.title}.`,
+          tone: 'ok',
+        })
+      } catch (error) {
+        setBoardNotice({
+          text: error instanceof Error ? error.message : `Could not relay clipboard into ${agent.title}.`,
+          tone: 'error',
+        })
+      }
+    })
+  }, [sendWorkerTerminalInput, withWorkerTerminalBusy])
+
+  const copyWorkerTerminalCommand = useCallback(async (agentId: string, command: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    try {
+      await copyTextToClipboard(command)
+      setBoardNotice({
+        text: `Copied ${agent?.title ?? 'DewDrop'} shell command.`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      setBoardNotice({
+        text: error instanceof Error ? error.message : 'Could not copy the shell command.',
+        tone: 'error',
+      })
+    }
+  }, [])
+
+  const copyWorkerTerminalBootstrap = useCallback(async (agentId: string, bootstrapText: string) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    try {
+      await copyTextToClipboard(bootstrapText)
+      setBoardNotice({
+        text: `Copied ${agent?.title ?? 'DewDrop'} bootstrap plan.`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      setBoardNotice({
+        text: error instanceof Error ? error.message : 'Could not copy the bootstrap plan.',
+        tone: 'error',
+      })
+    }
+  }, [])
+
+  const returnWorkerTerminalArtifact = useCallback(async (
+    agentId: string,
+    options?: { quiet?: boolean },
+  ) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    if (!agent) return
+    const problemId = agent.assignedToProblemId
+    if (!problemId) {
+      if (!options?.quiet) {
+        setBoardNotice({
+          text: `${agent.title} is not attached to a briefcase yet.`,
+          tone: 'error',
+        })
+      }
+      return
+    }
+
+    let runtimeArtifacts: WorkerTerminalArtifact[] = []
+    const sessionId = agent.agentRuntime?.sessionState?.sessionId
+    if (sessionId) {
+      try {
+        runtimeArtifacts = await listWorkerTerminalSessionArtifacts(sessionId)
+      } catch {
+        runtimeArtifacts = []
+      }
+    }
+
+    let changed = false
+    setCards((list) => {
+      let next = list
+      for (const card of list) {
+        if (card.id !== problemId || card.kind !== 'problem') continue
+        const existingEntry = card.runLedger?.find((entry) =>
+          entry.runId === `dewdrop-${agent.agentRuntime?.sessionState?.sessionId ?? agent.id}`,
+        )
+        const nextEntry = buildDewDropRunLedgerEntry(agent, {
+          roomId: card.id,
+          existingEntry,
+          runtimeArtifacts,
+        })
+        if (existingEntry && JSON.stringify(existingEntry) === JSON.stringify(nextEntry)) {
+          return list
+        }
+        changed = true
+        next = list.map((candidate) =>
+          candidate.id === card.id && candidate.kind === 'problem'
+            ? {
+                ...candidate,
+                runLedger: upsertRunLedgerEntry(candidate.runLedger, nextEntry),
+              }
+            : candidate,
+        )
+        break
+      }
+      return next
+    })
+
+    if (!options?.quiet && changed) {
+      setBoardNotice({
+        text: `Returned ${agent.title} into the briefcase.`,
+        tone: 'ok',
+      })
+    }
+  }, [])
+
+  const openSelectedProblemArtifact = useCallback((runId: string, artifactId: string) => {
+    const problem = cardsRef.current.find((card) => card.id === selectedProblemId && card.kind === 'problem')
+    if (!problem) return
+    const artifact = findRunLedgerArtifact(problem, runId, artifactId)
+    if (!artifact?.path) {
+      setBoardNotice({
+        text: 'This artifact does not expose an openable file path yet.',
+        tone: 'error',
+      })
+      return
+    }
+    if (!runId.startsWith('dewdrop-')) {
+      setBoardNotice({
+        text: 'Direct artifact opening is currently available for DewDrop-returned artifacts.',
+        tone: 'error',
+      })
+      return
+    }
+    const sessionId = runId.slice('dewdrop-'.length)
+    if (!sessionId) {
+      setBoardNotice({
+        text: 'The DewDrop session for this artifact could not be resolved.',
+        tone: 'error',
+      })
+      return
+    }
+    if (typeof window === 'undefined') return
+    window.open(workerTerminalArtifactFileUrl(sessionId, artifactId), '_blank', 'noopener,noreferrer')
+    setBoardNotice({
+      text: `Opened ${artifact.title}.`,
+      tone: 'ok',
+    })
+  }, [selectedProblemId])
+
+  const updateSelectedProblemArtifactStatus = useCallback((runId: string, artifactId: string, status: ArtifactStatus) => {
+    updateSelectedProblemCard((problem) => ({
+      ...problem,
+      runLedger: updateRunArtifactStatus(problem.runLedger, runId, artifactId, status),
+      briefCompartmentAssets: syncMirroredBriefcaseArtifact(problem, runId, artifactId, status),
+    }))
+  }, [updateSelectedProblemCard])
+
+  const resizeWorkerTerminalAgent = useCallback(async (
+    agentId: string,
+    sessionId: string,
+    cols: number,
+    rows: number,
+  ) => {
+    try {
+      const session = await resizeWorkerTerminalSession(sessionId, cols, rows)
+      syncWorkerTerminalState(agentId, workerTerminalStateFromSession(session))
+    } catch {
+      // Ignore resize jitter failures while the session boots or the card is still settling.
+    }
+  }, [syncWorkerTerminalState])
+
+  useEffect(() => {
+    if (isJsdomRuntime) return
+    const agentsToBoot = cards
+      .filter((card): card is WorkflowCard => card.kind === 'agent')
+      .filter((agent) => {
+        if (workerTerminalBusyIds.includes(agent.id)) return false
+        const runtime = normalizeAgentRuntime(agent.agentRuntime, { cardId: agent.id, title: agent.title })
+        const status = runtime.sessionState?.status
+        if (runtime.sessionState?.sessionId) return false
+        return !status || status === 'idle'
+      })
+
+    if (agentsToBoot.length === 0) return
+    for (const agent of agentsToBoot) {
+      void startWorkerTerminalAgent(agent.id)
+    }
+  }, [cards, isJsdomRuntime, startWorkerTerminalAgent, workerTerminalBusyIds])
+
+  useEffect(() => {
+    if (isJsdomRuntime || !selectedProblem || selectedProblemAgents.length === 0) return
+    const hostAliases = [...new Set(
+      selectedProblemAgents
+        .map((agent) => agent.agentRuntime?.vpnAlias?.trim() || '')
+        .filter(Boolean),
+    )]
+    if (hostAliases.length === 0) return
+
+    const refreshAll = async () => {
+      await Promise.all(
+        hostAliases.map((hostAlias) => refreshWorkerHostStatus(hostAlias, { quiet: true }).catch(() => undefined)),
+      )
+    }
+
+    void refreshAll()
+    const intervalId = window.setInterval(() => {
+      void refreshAll()
+    }, 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [isJsdomRuntime, refreshWorkerHostStatus, selectedProblem, selectedProblemAgents])
+
+  useEffect(() => {
+    if (isJsdomRuntime || selectedProblem) return
+    const hostAlias = selectedAgent?.agentRuntime?.vpnAlias?.trim()
+    if (!hostAlias) return
+
+    void refreshWorkerHostStatus(hostAlias, { quiet: true })
+    const intervalId = window.setInterval(() => {
+      void refreshWorkerHostStatus(hostAlias, { quiet: true })
+    }, 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [isJsdomRuntime, refreshWorkerHostStatus, selectedAgent, selectedProblem])
+
+  useEffect(() => {
+    if (isJsdomRuntime) return
+    for (const agent of cards) {
+      if (agent.kind !== 'agent' || !agent.assignedToProblemId) continue
+      const sessionState = agent.agentRuntime?.sessionState
+      const sessionId = sessionState?.sessionId
+      const status = sessionState?.status
+      if (!sessionId || !status || !['done', 'failed', 'killed'].includes(status)) continue
+      const signature = `${status}:${sessionState.outputVersion ?? 0}:${sessionState.lastHeartbeatAt ?? ''}`
+      const key = `${agent.id}:${sessionId}`
+      if (returnedDewDropRunSignaturesRef.current.get(key) === signature) continue
+      returnedDewDropRunSignaturesRef.current.set(key, signature)
+      void returnWorkerTerminalArtifact(agent.id, { quiet: true })
+    }
+  }, [cards, isJsdomRuntime, returnWorkerTerminalArtifact])
+
+  useEffect(() => {
+    if (isJsdomRuntime || !selectedProblem || selectedProblemAgents.length === 0) return
+    let cancelled = false
+
+    const syncSessions = async () => {
+      try {
+        const sessions = await listWorkerTerminalSessions({
+          workspaceId: workspaceId ?? bootId,
+          problemId: selectedProblem.id,
+        })
+        if (cancelled) return
+        const latestByAgentId = new Map<string, (typeof sessions)[number]>()
+        for (const session of sessions) {
+          if (!session.agentId || latestByAgentId.has(session.agentId)) continue
+          latestByAgentId.set(session.agentId, session)
+        }
+        for (const agent of selectedProblemAgents) {
+          const session = latestByAgentId.get(agent.id)
+          if (!session) continue
+          syncWorkerTerminalState(agent.id, workerTerminalStateFromSession(session))
+        }
+      } catch {
+        // Polling failures should not interrupt local editing.
+      }
+    }
+
+    void syncSessions()
+    const timer = window.setInterval(() => {
+      void syncSessions()
+    }, 2500)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [bootId, isJsdomRuntime, selectedProblem, selectedProblemAgents, syncWorkerTerminalState, workspaceId])
+
+  useEffect(() => {
+    if (isJsdomRuntime || !selectedAgent?.agentRuntime?.sessionState?.sessionId) return
+    let cancelled = false
+
+    const syncSession = async () => {
+      try {
+        const session = await getWorkerTerminalSession(selectedAgent.agentRuntime!.sessionState!.sessionId!)
+        if (cancelled) return
+        syncWorkerTerminalState(selectedAgent.id, workerTerminalStateFromSession(session))
+      } catch {
+        // Leave the current state alone if the session cannot be reached.
+      }
+    }
+
+    void syncSession()
+    const timer = window.setInterval(() => {
+      void syncSession()
+    }, 350)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [isJsdomRuntime, selectedAgent, syncWorkerTerminalState])
+
+  const updateProblemCardById = useCallback(
+    (problemId: string, mutate: (problem: WorkflowCard) => WorkflowCard) => {
+      setCards((list) => {
+        let changed = false
+        let next = list.map((card) => {
+          if (card.id !== problemId || card.kind !== 'problem') return card
+          const mutated = mutate(card)
+          if (mutated !== card) changed = true
+          return mutated
+        })
+        if (!changed) return list
+        next = reflowHubKanbanLayout(next, problemId)
+        return next
+      })
+    },
+    [],
+  )
+
+  const updateProblemBriefCard = useCallback(
+    (problemId: string, briefSpec: WorkflowCard['briefSpec']) => {
+      updateProblemCardById(problemId, (problem) =>
+        bumpBriefVersion(
+          syncCapabilityPack(
+            syncProblemBriefBindings({
+              ...problem,
+              briefSpec,
+            }),
+          ),
+        ),
+      )
+    },
+    [updateProblemCardById],
+  )
+
+  const setSelectedProblemTemplate = useCallback(
+    (template: ButlerSwarmTemplate) => {
+      setLaunchTemplate(template)
+      updateSelectedProblemCard((problem) =>
+        syncCapabilityPack({
+          ...problem,
+          swarmTemplate: template,
+        }),
+      )
+    },
+    [updateSelectedProblemCard],
+  )
+
+  const addSelectedProblemCompartmentFiles = useCallback(
+    (files: File[]) => {
+      if (!selectedProblem || files.length === 0) return
+      updateSelectedProblemCard((problem) => {
+        const compartmentOptions = buildBriefCompartmentOptions(problem)
+        const nextAssets = files.map((file) =>
+          createBriefCompartmentAsset(problem, file, {
+            compartmentOptions,
+          }),
+        )
+        return {
+          ...problem,
+          briefCompartmentAssets: [...(problem.briefCompartmentAssets ?? []), ...nextAssets],
+        }
+      })
+      setBoardNotice({
+        text: `Indexed ${files.length} file${files.length === 1 ? '' : 's'} into ${selectedProblem.title}`,
+        tone: 'ok',
+      })
+    },
+    [selectedProblem, updateSelectedProblemCard],
+  )
+
+  const moveSelectedProblemCompartmentAsset = useCallback(
+    (assetId: string, compartmentId: string) => {
+      updateSelectedProblemCard((problem) => {
+        const compartmentOptions = buildBriefCompartmentOptions(problem)
+        const targetCompartment = compartmentOptions.find((option) => option.id === compartmentId)
+        if (!targetCompartment) return problem
+        const nextAssets = (problem.briefCompartmentAssets ?? []).map((asset) => {
+          if (asset.id !== assetId) return asset
+          return {
+            ...asset,
+            compartmentId: targetCompartment.id,
+            compartmentLabel: targetCompartment.label,
+            compartmentKind: targetCompartment.kind,
+            anchorRef: targetCompartment.anchorRef,
+            matchedLocusId: targetCompartment.locusId,
+            organizeStatus: 'sorted' as const,
+            organizeReason: `Moved into ${targetCompartment.label} by the operator.`,
+          }
+        })
+        return {
+          ...problem,
+          briefCompartmentAssets: nextAssets,
+        }
+      })
+    },
+    [updateSelectedProblemCard],
+  )
+
+  const removeSelectedProblemCompartmentAsset = useCallback(
+    (assetId: string) => {
+      updateSelectedProblemCard((problem) => {
+        const nextAssets = (problem.briefCompartmentAssets ?? []).filter((asset) => asset.id !== assetId)
+        return {
+          ...problem,
+          briefCompartmentAssets: nextAssets.length > 0 ? nextAssets : undefined,
+        }
+      })
+    },
+    [updateSelectedProblemCard],
+  )
+
+  const selectedProblemLaunchBrief = useMemo(() => {
+    if (!selectedProblem || !selectedProblemBlueprint || !selectedProblemModelPacket || !launchObjective.trim()) return ''
+    return [
+      selectedProblem.title.trim(),
+      `Template: ${launchTemplate}`,
+      `Model route: ${selectedProblemModelPacket.route.strategy} via ${selectedProblemModelPacket.route.primary} (fallback ${selectedProblemModelPacket.route.fallback})`,
+      ...(selectedProblem.paperclipCompanyId
+        ? [
+            `Paperclip company: ${selectedProblem.paperclipCompanyId}`,
+            ...(selectedProblem.paperclipProjectId
+              ? [`Paperclip project: ${selectedProblem.paperclipProjectId}`]
+              : []),
+            ...(selectedProblem.paperclipLeadAgentId
+              ? [`Paperclip lead: ${selectedProblem.paperclipLeadAgentId}`]
+              : []),
+          ]
+        : []),
+      '',
+      'Objective:',
+      launchObjective.trim(),
+      '',
+      'Model packet:',
+      selectedProblemModelPacket.packetText,
+      '',
+      'Handoff packet:',
+      selectedProblemBlueprint.handoffText,
+    ].join('\n')
+  }, [launchObjective, launchTemplate, selectedProblem, selectedProblemBlueprint, selectedProblemModelPacket])
+
+  const copyInspectorText = useCallback(async (label: string, text: string) => {
+    if (!text.trim()) {
+      setBoardNotice({ text: `No ${label} is available yet.`, tone: 'error' })
+      return
+    }
+
+    try {
+      await copyTextToClipboard(text)
+      setBoardNotice({ text: `Copied ${label}.`, tone: 'ok' })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : `Could not copy ${label} from this browser session`
+      setBoardNotice({ text: message, tone: 'error' })
+    }
+  }, [])
 
   const refreshRuns = useCallback(
     async (quiet = false) => {
@@ -1018,9 +2613,63 @@ export default function BoardView() {
     }
   }, [bridgeSettings, refreshRuns])
 
-  const launchSelectedProblemSwarm = useCallback(async () => {
+  const refreshPaperclipState = useCallback(
+    async (quiet = false, companyIdOverride?: string) => {
+      setPaperclipBusy(true)
+      try {
+        const companies = await listPaperclipCompanies(paperclipSettings)
+        setPaperclipCompanies(companies)
+        const nextCompanyId =
+          companyIdOverride?.trim() ||
+          selectedProblemPaperclipCompanyId ||
+          companies[0]?.id ||
+          ''
+
+        if (nextCompanyId) {
+          const [projects, agents] = await Promise.all([
+            listPaperclipProjects(paperclipSettings, nextCompanyId),
+            listPaperclipAgents(paperclipSettings, nextCompanyId),
+          ])
+          setPaperclipProjects(projects)
+          setPaperclipAgents(agents)
+        } else {
+          setPaperclipProjects([])
+          setPaperclipAgents([])
+        }
+
+        setPaperclipOnline(true)
+        if (!quiet) {
+          setBoardNotice({
+            text:
+              companies.length > 0
+                ? `Paperclip online at ${paperclipSettings.url}`
+                : `Paperclip responded at ${paperclipSettings.url}, but no companies were returned`,
+            tone: 'ok',
+          })
+        }
+      } catch (error) {
+        setPaperclipOnline(false)
+        setPaperclipCompanies([])
+        setPaperclipProjects([])
+        setPaperclipAgents([])
+        if (!quiet) {
+          const message = error instanceof Error ? error.message : 'Could not reach Paperclip'
+          setBoardNotice({ text: message, tone: 'error' })
+        }
+      } finally {
+        setPaperclipBusy(false)
+      }
+    },
+    [paperclipSettings, selectedProblemPaperclipCompanyId],
+  )
+
+  const launchSelectedProblemPaperclip = useCallback(async () => {
     if (!selectedProblem) {
-      setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
+      setBoardNotice({ text: 'Select exactly one problem card to launch into Paperclip.', tone: 'error' })
+      return
+    }
+    if (!selectedProblemPaperclipCompanyId) {
+      setBoardNotice({ text: 'Choose a Paperclip company for this problem room first.', tone: 'error' })
       return
     }
     if (!launchObjective.trim()) {
@@ -1028,8 +2677,167 @@ export default function BoardView() {
       return
     }
 
+    const targetAgentIds =
+      selectedProblemPaperclipAgentIds.length > 0
+        ? selectedProblemPaperclipAgentIds
+        : selectedProblemPaperclipLeadAgentId
+          ? [selectedProblemPaperclipLeadAgentId]
+          : []
+    const targetAgents = paperclipAgents.filter((agent) => targetAgentIds.includes(agent.id))
+    const mentionTokens = targetAgents.map((agent) => `@${agent.name}`)
+    const executionWorkspaceMode = executionWorkspaceModeForRecipe(selectedProblem.swarmRecipeId)
+
+    setPaperclipLaunchBusy(true)
+    try {
+      const issue = await createPaperclipIssue(paperclipSettings, {
+        companyId: selectedProblemPaperclipCompanyId,
+        projectId: selectedProblemPaperclipProjectId || undefined,
+        assigneeAgentId: selectedProblemPaperclipLeadAgentId || targetAgentIds[0] || undefined,
+        title: selectedProblem.title.trim(),
+        description: selectedProblemLaunchBrief || launchObjective.trim(),
+        executionWorkspaceSettings: executionWorkspaceMode ? { mode: executionWorkspaceMode } : undefined,
+      })
+
+      await upsertPaperclipIssueDocument(paperclipSettings, issue.id, {
+        key: 'plan',
+        title: 'DewDrops Swarm OS launch packet',
+        body: selectedProblemLaunchBrief || launchObjective.trim(),
+      })
+
+      if (mentionTokens.length > 0) {
+        await addPaperclipIssueComment(
+          paperclipSettings,
+          issue.id,
+          [
+            `${mentionTokens.join(' ')} DewDrops Swarm OS launched this room into Paperclip.`,
+            '',
+            `Issue: ${issue.identifier ?? issue.id}`,
+            '',
+            'Objective:',
+            launchObjective.trim(),
+          ].join('\n'),
+        )
+      }
+
+      let leadRunId = ''
+      for (const agentId of targetAgentIds) {
+        const run = await invokePaperclipAgent(paperclipSettings, agentId)
+        if (!leadRunId) leadRunId = run.runId
+      }
+
+      updateSelectedProblemCard((problem) => ({
+        ...problem,
+        lastPaperclipIssueId: issue.id,
+        lastPaperclipRunId: leadRunId || problem.lastPaperclipRunId,
+      }))
+
+      setBoardNotice({
+        text:
+          targetAgentIds.length > 0
+            ? `Paperclip issue ${issue.identifier ?? issue.id} launched for “${selectedProblem.title}”`
+            : `Paperclip issue ${issue.identifier ?? issue.id} created for “${selectedProblem.title}”`,
+        tone: 'ok',
+      })
+    } catch (error) {
+      const message =
+        error instanceof PaperclipBridgeError || error instanceof Error
+          ? error.message
+          : 'Could not launch Paperclip swarm'
+      setBoardNotice({ text: message, tone: 'error' })
+    } finally {
+      setPaperclipLaunchBusy(false)
+    }
+  }, [
+    launchObjective,
+    paperclipAgents,
+    paperclipSettings,
+    selectedProblem,
+    selectedProblemLaunchBrief,
+    selectedProblemPaperclipAgentIds,
+    selectedProblemPaperclipCompanyId,
+    selectedProblemPaperclipLeadAgentId,
+    selectedProblemPaperclipProjectId,
+    updateSelectedProblemCard,
+  ])
+
+  const syncPaperclipArtifactReview = useCallback(
+    async (runId: string, artifactId: string, status: ArtifactStatus) => {
+      const issueId = selectedProblem?.lastPaperclipIssueId?.trim()
+      if (!issueId) return
+
+      const externalId = `${runId}:${artifactId}`
+      const workProducts = await listPaperclipIssueWorkProducts(paperclipSettings, issueId)
+      const workProduct = workProducts.find((entry) => entry.externalId === externalId)
+
+      if (!workProduct) {
+        setBoardNotice({
+          text: `Stored ${status} locally. No Paperclip work product matched ${externalId}.`,
+          tone: 'error',
+        })
+        return
+      }
+
+      await updatePaperclipWorkProduct(paperclipSettings, workProduct.id, {
+        status: paperclipStatusForArtifactStatus(status),
+        reviewState: paperclipReviewStateForArtifactStatus(status),
+        metadata: {
+          ...(workProduct.metadata ?? {}),
+          artifactStatus: status,
+        },
+      })
+
+      setBoardNotice({
+        text: `Marked ${workProduct.title} as ${status} in DewDrops Swarm OS and Paperclip.`,
+        tone: 'ok',
+      })
+    },
+    [paperclipSettings, selectedProblem?.lastPaperclipIssueId],
+  )
+
+  const launchProblemSwarm = useCallback(async (
+    problemId: string,
+    options?: {
+      objectiveOverride?: string
+      templateOverride?: ButlerSwarmTemplate
+      quiet?: boolean
+      continuationSourceRunId?: string
+      continuationReason?: string
+    },
+  ) => {
+    const cardsNow = cardsRef.current
+    const problem = cardsNow.find((card) => card.id === problemId && card.kind === 'problem')
+    if (!problem) {
+      if (!options?.quiet) {
+        setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
+      }
+      return false
+    }
+
+    const template =
+      options?.templateOverride ??
+      (problem.swarmTemplate as ButlerSwarmTemplate | undefined) ??
+      'planning'
+    const objective =
+      options?.objectiveOverride?.trim() ||
+      buildProblemSwarmObjective(problem, cardsNow, wiresRef.current, workspaceMode).trim()
+    if (!objective) {
+      if (!options?.quiet) {
+        setBoardNotice({ text: 'Swarm objective is empty.', tone: 'error' })
+      }
+      return false
+    }
+
+    const problemAgents = agentsInProblemSwarm(problem.id, cardsNow, wiresRef.current)
+
     setLaunchBusy(true)
     try {
+      const problemForLaunch = syncProblemBriefBindings(problem)
+      const blueprint = buildProblemSessionBlueprint(problemForLaunch, workspaceMode)
+      const briefPacket = buildProblemBriefPacket(problemForLaunch)
+      const launchMetadata = buildProblemLaunchMetadata(problemForLaunch)
+      const modelPacket = buildProblemModelPacket(problemForLaunch, cardsNow, wiresRef.current, workspaceMode, {
+        template,
+      })
       let nextSettings = bridgeSettings
       const isLocalBridge = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(bridgeSettings.url.trim())
       if (!nextSettings.token.trim() && isLocalBridge) {
@@ -1038,25 +2846,66 @@ export default function BoardView() {
       }
 
       const contract = await createSwarmContract(nextSettings, {
-        title: selectedProblem.title,
-        objective: launchObjective.trim(),
-        template: launchTemplate,
-        agents: buildSwarmContractAgents(
-          selectedProblem,
-          selectedProblemAgents,
-          launchTemplate,
-          launchObjective.trim(),
-        ),
-        room_id: selectedProblem.butlerRoomId,
-        room_kind: 'project',
-        target: 'local_desktop',
-        launcher: 'desktop',
-        metadata: {
-          dewdrops_problem_id: selectedProblem.id,
-          selected_agent_count: selectedProblemAgents.length,
-          selected_agent_ids: selectedProblemAgents.map((agent) => agent.id),
+        title: problem.title,
+        objective,
+        template,
+        capability_profile_id: blueprint.capabilityProfileId,
+        swarm_recipe_id: blueprint.swarmRecipeId,
+        rtk_basis: {
+          ...blueprint.rtkBasis,
+          brief_version: briefPacket?.briefVersion ?? blueprint.rtkBasis.brief_version,
+          brief_hash: briefPacket?.briefHash,
         },
-        source_refs: [`dewdrops/cards/${selectedProblem.id}`],
+        handoff_packet: blueprint.handoffText,
+        briefPacket: briefPacket ?? undefined,
+        agents: buildSwarmContractAgents(
+          problemForLaunch,
+          problemAgents,
+          template,
+          objective,
+          workspaceMode,
+        ),
+        room_id: problem.butlerRoomId,
+        room_kind: launchMetadata.roomKind,
+        target: blueprint.target,
+        launcher: blueprint.launcher,
+        metadata: {
+          ...launchMetadata.metadata,
+          dewdrops_problem_id: problem.id,
+          selected_agent_count: problemAgents.length,
+          selected_agent_ids: problemAgents.map((agent) => agent.id),
+          workspace_mode: blueprint.workspaceMode,
+          launch_surface: blueprint.launchSurface,
+          capability_profile_id: blueprint.capabilityProfileId,
+          swarm_recipe_id: blueprint.swarmRecipeId,
+          model_route_strategy: modelPacket.route.strategy,
+          model_route_primary: modelPacket.route.primary,
+          model_route_fallback: modelPacket.route.fallback,
+          model_route_reason: modelPacket.route.reason,
+          model_packet_version: modelPacket.version,
+          model_packet_lines: modelPacket.stats.lineCount,
+          model_packet_chars: modelPacket.stats.charCount,
+          model_packet: modelPacket.packetText,
+          rtk_basis: {
+            ...blueprint.rtkBasis,
+            brief_version: briefPacket?.briefVersion ?? blueprint.rtkBasis.brief_version,
+            brief_hash: briefPacket?.briefHash,
+          },
+          rtk_handoff_lines: blueprint.handoffLines.length,
+          rtk_handoff_chars: blueprint.handoffText.length,
+          brief_version: briefPacket?.briefVersion,
+          brief_hash: briefPacket?.briefHash,
+          memory_wing: blueprint.memoryWing,
+          memory_room: blueprint.memoryRoom,
+          handoff_packet: blueprint.handoffText,
+          paperclip_company_id: problem.paperclipCompanyId,
+          paperclip_project_id: problem.paperclipProjectId,
+          paperclip_agent_ids: problem.paperclipAgentIds ?? [],
+          paperclip_lead_agent_id: problem.paperclipLeadAgentId,
+          auto_continuation_source_run_id: options?.continuationSourceRunId,
+          auto_continuation_reason: options?.continuationReason,
+        },
+        source_refs: blueprint.sourceRefs,
         created_by: 'dewdrops',
       })
       const launched = await launchSwarmContract(nextSettings, contract.id)
@@ -1067,32 +2916,86 @@ export default function BoardView() {
 
       setCards((list) =>
         list.map((card) =>
-          card.id === selectedProblem.id
+          card.id === problem.id
             ? {
                 ...card,
                 butlerRoomId: contract.room_id,
                 lastSwarmContractId: contract.id,
                 lastSwarmRunId: runId || card.lastSwarmRunId,
-                swarmTemplate: launchTemplate,
+                swarmTemplate: template,
+                lastAutoContinuationSourceRunId:
+                  options?.continuationSourceRunId ?? card.lastAutoContinuationSourceRunId,
               }
             : card,
         ),
       )
       await refreshRuns(true)
       setBoardNotice({
-        text: `Launched Butler swarm for “${selectedProblem.title}”`,
+        text: options?.continuationSourceRunId
+          ? `Auto-continued Butler swarm for “${problem.title}”`
+          : `Launched Butler swarm for “${problem.title}”`,
         tone: 'ok',
       })
+      return true
     } catch (error) {
       const message =
         error instanceof ButlerBridgeError || error instanceof Error
           ? error.message
           : 'Could not launch Butler swarm'
-      setBoardNotice({ text: message, tone: 'error' })
+      setBoardNotice({
+        text: options?.continuationSourceRunId
+          ? `Could not auto-continue “${problem.title}”: ${message}`
+          : message,
+        tone: 'error',
+      })
+      return false
     } finally {
       setLaunchBusy(false)
     }
-  }, [bridgeSettings, launchObjective, launchTemplate, refreshRuns, selectedProblem, selectedProblemAgents])
+  }, [bridgeSettings, refreshRuns, workspaceMode])
+
+  const launchSelectedProblemSwarm = useCallback(async () => {
+    if (!selectedProblem) {
+      setBoardNotice({ text: 'Select exactly one problem card to launch a Butler swarm.', tone: 'error' })
+      return
+    }
+    await launchProblemSwarm(selectedProblem.id, {
+      objectiveOverride: launchObjective.trim(),
+      templateOverride: launchTemplate,
+    })
+  }, [launchObjective, launchProblemSwarm, launchTemplate, selectedProblem])
+
+  useEffect(() => {
+    if (!selectedProblem || !selectedProblemAutoContinuationPlan || launchBusy) return
+    const attempted = autoContinuationAttemptRef.current.get(selectedProblem.id)
+    const now = Date.now()
+    if (
+      attempted &&
+      attempted.sourceRunId === selectedProblemAutoContinuationPlan.sourceRunId &&
+      attempted.nextRetryAt > now
+    ) {
+      return
+    }
+
+    autoContinuationAttemptRef.current.set(selectedProblem.id, {
+      sourceRunId: selectedProblemAutoContinuationPlan.sourceRunId,
+      nextRetryAt: Number.POSITIVE_INFINITY,
+    })
+
+    void launchProblemSwarm(selectedProblem.id, {
+      objectiveOverride: selectedProblemAutoContinuationPlan.objective,
+      templateOverride: selectedProblemAutoContinuationPlan.template,
+      quiet: true,
+      continuationSourceRunId: selectedProblemAutoContinuationPlan.sourceRunId,
+      continuationReason: selectedProblemAutoContinuationPlan.reason,
+    }).then((ok) => {
+      if (ok) return
+      autoContinuationAttemptRef.current.set(selectedProblem.id, {
+        sourceRunId: selectedProblemAutoContinuationPlan.sourceRunId,
+        nextRetryAt: Date.now() + 30_000,
+      })
+    })
+  }, [launchBusy, launchProblemSwarm, selectedProblem, selectedProblemAutoContinuationPlan])
 
   const stopCurrentSwarmRun = useCallback(async () => {
     if (!currentRunId) {
@@ -1121,6 +3024,11 @@ export default function BoardView() {
   }, [refreshBridgeState])
 
   useEffect(() => {
+    if (!toolbarPanelOpen) return
+    void refreshPaperclipState(true, selectedProblemPaperclipCompanyId)
+  }, [refreshPaperclipState, selectedProblemPaperclipCompanyId, toolbarPanelOpen])
+
+  useEffect(() => {
     if (!recentRuns.some((run) => swarmRunIsActive(run.status))) return
     const id = window.setInterval(() => {
       void refreshRuns(true)
@@ -1136,7 +3044,7 @@ export default function BoardView() {
     const sx = e.clientX - rect.left
     const sy = e.clientY - rect.top
     const { x, y } = screenToWorld(sx, sy)
-    addAgentAt(x, y)
+    spawnNodeAt(x, y, DEWDROP_NODE_TEMPLATES[0]!)
   }
 
   const worldTransform = `translate(${size.w / 2}px, ${size.h / 2}px) scale(${camera.zoom}) translate(${-camera.x}px, ${-camera.y}px)`
@@ -1293,10 +3201,14 @@ export default function BoardView() {
     (cardId: string) => {
       const draggedIds =
         selectedIds.length > 1 && selectedIds.includes(cardId) ? selectedIds : [cardId]
+      const fallbackProblemId =
+        draggedIds.length > 1
+          ? (bestGroupProblemTarget(new Set(draggedIds), cardsRef.current)?.id ?? null)
+          : null
       for (const draggedId of draggedIds) {
         const dragged = cardsRef.current.find((card) => card.id === draggedId)
         if (dragged?.kind === 'agent') {
-          resolveAgentAssignment(draggedId)
+          resolveAgentAssignment(draggedId, fallbackProblemId)
         }
       }
     },
@@ -1304,13 +3216,123 @@ export default function BoardView() {
   )
 
   return (
-    <div className="freeform-root">
+    <div className={`freeform-root freeform-root--${workspaceMode}`}>
       <header className="freeform-toolbar freeform-toolbar--minimal">
         <div className="freeform-toolbar-meta">
-          <h1>DewDrops</h1>
-          <p>Double-click empty space to summon an agent. Drag agents into a problem to form a swarm.</p>
+          <h1>DewDrops Swarm OS</h1>
+          <p>
+            {workspaceName ? `${workspaceName} • ` : ''}
+            Spin up `Terminal`, `Hermes`, `Browser`, `Playwright`, or `Local model` nodes instantly. Shortcuts: `T`, `H`, `B`, `P`, `L`. Double-click empty space still drops a terminal.
+          </p>
         </div>
         <div className="freeform-toolbar-actions">
+          {workspaceOptions.length > 0 && workspaceId ? (
+            <label className="freeform-workspace-picker">
+              <span>Workspace</span>
+              <select
+                value={workspaceId}
+                onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                  onWorkspaceChange?.(e.target.value)
+                }}
+              >
+                {workspaceOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {onCreateWorkspace ? (
+            <button
+              type="button"
+              className={`freeform-btn freeform-btn--tool${presetPickerOpen ? ' is-active' : ''}`}
+              title="Create a new workspace from a preset"
+              onClick={() => setPresetPickerOpen((prev) => !prev)}
+            >
+              New workspace
+            </button>
+          ) : null}
+          {onDuplicateWorkspace ? (
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              title="Duplicate the current workspace"
+              onClick={() => {
+                onDuplicateWorkspace()
+              }}
+            >
+              Duplicate
+            </button>
+          ) : null}
+          {onRenameWorkspace ? (
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              title="Rename the current workspace"
+              onClick={() => {
+                const nextName = window.prompt('Rename workspace', workspaceName ?? '')
+                if (nextName !== null) {
+                  onRenameWorkspace(nextName)
+                }
+              }}
+            >
+              Rename
+            </button>
+          ) : null}
+          {onDeleteWorkspace && workspaceOptions.length > 1 ? (
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              title="Delete the current workspace"
+              onClick={() => {
+                if (window.confirm(`Delete workspace “${workspaceName ?? 'Current workspace'}”?`)) {
+                  onDeleteWorkspace()
+                }
+              }}
+            >
+              Delete
+            </button>
+          ) : null}
+          {onOpenWorldShell ? (
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              title="Open the focused workspace in the World OS shell"
+              onClick={() => {
+                onOpenWorldShell(selectedProblem?.id ?? null)
+              }}
+            >
+              World shell
+            </button>
+          ) : null}
+          {onOpenPhoneRelay ? (
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              title="Open the focused workspace in the phone relay shell"
+              onClick={() => {
+                onOpenPhoneRelay(selectedProblem?.id ?? null)
+              }}
+            >
+              Phone relay
+            </button>
+          ) : null}
+          <div className="freeform-toolbar-mode-group" aria-label="Workspace mode">
+            {WORKSPACE_MODE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`freeform-btn freeform-btn--tool${workspaceMode === option.value ? ' is-active' : ''}`}
+                title={option.detail}
+                onClick={() => {
+                  setWorkspaceMode(option.value)
+                }}
+              >
+                {option.value === 'desktop' ? 'Desktop' : option.value === 'phone' ? 'Phone' : 'Palace'}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className={`freeform-btn freeform-btn--tool${toolbarPanelOpen ? ' is-active' : ''}`}
@@ -1321,15 +3343,38 @@ export default function BoardView() {
           >
             {toolbarPanelOpen ? 'Hide dock' : 'Show dock'}
           </button>
+          {DEWDROP_NODE_TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className={`freeform-btn freeform-btn--tool${template.id === 'shell' ? ' is-active' : ''}`}
+              title={`Spin up a ${template.titlePrefix.toLowerCase()} node at the center of the current view`}
+              onClick={() => {
+                spawnNodeInView(template)
+              }}
+            >
+              {template.label}
+            </button>
+          ))}
           <button
             type="button"
-            className="freeform-btn freeform-btn--tool is-active"
+            className="freeform-btn freeform-btn--tool"
             title="Select and move cards — drag on empty canvas to marquee"
             onClick={() => {
               viewportRef.current?.focus()
             }}
           >
             Select
+          </button>
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            title="Spin up a batch of terminals near the selected problem or current view"
+            onClick={() => {
+              summonAgentBatch()
+            }}
+          >
+            Spin up {BULK_SUMMON_COUNT}
           </button>
           <button
             type="button"
@@ -1360,7 +3405,7 @@ export default function BoardView() {
           <button
             type="button"
             className="freeform-btn freeform-btn--tool"
-            title="Load a board from a DewDrops JSON file"
+            title="Load a board from a DewDrops Swarm OS JSON file"
             onClick={() => importFileRef.current?.click()}
           >
             Import
@@ -1379,295 +3424,6 @@ export default function BoardView() {
           <span>{availableAgentCount} available</span>
           <span>{totalOpenQuestionCount} open</span>
         </div>
-        {toolbarPanelOpen ? (
-        <section className="freeform-toolbar-panel" aria-label="Butler swarm launcher">
-          <div className="freeform-toolbar-panel-header">
-            <div>
-              <h2>Butler bridge</h2>
-              <p>Launch a real swarm from one selected problem bubble.</p>
-            </div>
-            <div className="freeform-toolbar-panel-status">
-              <span
-                className={`freeform-run-pill${bridgeHealth?.ok ? ' is-online' : ' is-offline'}`}
-              >
-                {bridgeBusy ? 'checking' : bridgeHealth?.ok ? 'online' : 'offline'}
-              </span>
-              {bridgeHealth?.service ? <span>{bridgeHealth.service}</span> : null}
-              {bridgeHealth?.version ? <span>v{bridgeHealth.version}</span> : null}
-            </div>
-          </div>
-
-          <div className="freeform-toolbar-panel-grid">
-            <div className="freeform-toolbar-panel-section">
-              <label className="freeform-field">
-                <span>Bridge URL</span>
-                <input
-                  type="url"
-                  value={bridgeSettings.url}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                    persistBridgeSettings({ ...bridgeSettings, url: e.target.value })
-                  }}
-                  placeholder="http://127.0.0.1:8765"
-                />
-              </label>
-              <label className="freeform-field">
-                <span>Token</span>
-                <input
-                  type="password"
-                  value={bridgeSettings.token}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                    persistBridgeSettings({ ...bridgeSettings, token: e.target.value })
-                  }}
-                  placeholder="Optional on localhost"
-                />
-              </label>
-              <div className="freeform-toolbar-panel-actions">
-                <button
-                  type="button"
-                  className="freeform-btn freeform-btn--tool"
-                  onClick={() => {
-                    void pairLocalBridgeAction()
-                  }}
-                  disabled={bridgeBusy}
-                >
-                  {bridgeBusy ? 'Pairing…' : 'Pair local'}
-                </button>
-                <button
-                  type="button"
-                  className="freeform-btn freeform-btn--tool"
-                  onClick={() => {
-                    void refreshBridgeState(false)
-                  }}
-                  disabled={bridgeBusy}
-                >
-                  Check bridge
-                </button>
-                <button
-                  type="button"
-                  className="freeform-btn freeform-btn--tool"
-                  onClick={() => {
-                    void refreshRuns(false)
-                  }}
-                  disabled={bridgeBusy}
-                >
-                  Refresh runs
-                </button>
-              </div>
-              <p className="freeform-toolbar-panel-hint">
-                Localhost browser calls can use the local Butler bridge without a manual token.
-              </p>
-            </div>
-
-            <div className="freeform-toolbar-panel-section">
-              <div className="freeform-toolbar-panel-problem">
-                <div>
-                  <h3>{selectedProblem ? selectedProblem.title : 'No problem selected'}</h3>
-                  <p>
-                    {selectedProblem
-                      ? `${selectedProblemAgents.length} agent${selectedProblemAgents.length === 1 ? '' : 's'} in the swarm envelope`
-                      : 'Select exactly one problem bubble to launch a swarm.'}
-                  </p>
-                </div>
-                {selectedProblem?.lastSwarmRunId ? (
-                  <span className="freeform-run-pill">
-                    Last run {selectedProblem.lastSwarmRunId.slice(-6)}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="freeform-toolbar-panel-form-row">
-                <label className="freeform-field">
-                  <span>Template</span>
-                  <select
-                    value={launchTemplate}
-                    onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                      setLaunchTemplate(e.target.value as ButlerSwarmTemplate)
-                    }
-                    disabled={!selectedProblem || launchBusy}
-                  >
-                    {SWARM_TEMPLATE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="freeform-toolbar-panel-form-row">
-                <label className="freeform-field">
-                  <span>Room width</span>
-                  <input
-                    type="number"
-                    min={160}
-                    max={720}
-                    step={10}
-                    value={selectedProblemRoomWidth}
-                    disabled={!selectedProblem}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      if (!selectedProblem) return
-                      const nextWidth = clampNumber(
-                        e.target.valueAsNumber || selectedProblemRoomWidth,
-                        160,
-                        720,
-                      )
-                      updateSelectedProblemLayout((problem) => ({
-                        ...problem,
-                        width: nextWidth,
-                        problemBaseWidth: nextWidth,
-                      }))
-                    }}
-                  />
-                </label>
-                <label className="freeform-field">
-                  <span>Room height</span>
-                  <input
-                    type="number"
-                    min={100}
-                    max={520}
-                    step={10}
-                    value={selectedProblemRoomHeight}
-                    disabled={!selectedProblem}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      if (!selectedProblem) return
-                      const nextHeight = clampNumber(
-                        e.target.valueAsNumber || selectedProblemRoomHeight,
-                        100,
-                        520,
-                      )
-                      updateSelectedProblemLayout((problem) => ({
-                        ...problem,
-                        height: nextHeight,
-                        problemBaseHeight: nextHeight,
-                      }))
-                    }}
-                  />
-                </label>
-              </div>
-
-              <div className="freeform-toolbar-panel-form-row">
-                <label className="freeform-field">
-                  <span>Membrane pad</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={120}
-                    step={4}
-                    value={selectedProblemEnvelopePad}
-                    disabled={!selectedProblem}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      if (!selectedProblem) return
-                      const nextPad = clampNumber(
-                        e.target.valueAsNumber || selectedProblemEnvelopePad,
-                        0,
-                        120,
-                      )
-                      updateSelectedProblemLayout((problem) => ({
-                        ...problem,
-                        swarmEnvelopePad: nextPad,
-                      }))
-                    }}
-                  />
-                </label>
-                <label className="freeform-field">
-                  <span>Card width</span>
-                  <input
-                    type="number"
-                    min={96}
-                    max={260}
-                    step={8}
-                    value={selectedProblemAgentWidth}
-                    disabled={!selectedProblem}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      if (!selectedProblem) return
-                      const nextWidth = clampNumber(
-                        e.target.valueAsNumber || selectedProblemAgentWidth,
-                        96,
-                        260,
-                      )
-                      updateSelectedProblemLayout((problem) => ({
-                        ...problem,
-                        swarmAgentMinWidth: nextWidth,
-                      }))
-                    }}
-                  />
-                </label>
-              </div>
-
-              <label className="freeform-field">
-                <span>Objective</span>
-                <textarea
-                  value={launchObjective}
-                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setLaunchObjective(e.target.value)}
-                  placeholder="Describe what this swarm should do."
-                  disabled={!selectedProblem || launchBusy}
-                  rows={5}
-                />
-              </label>
-
-              <div className="freeform-toolbar-panel-actions">
-                <button
-                  type="button"
-                  className="freeform-btn freeform-btn--tool is-active"
-                  onClick={() => {
-                    void launchSelectedProblemSwarm()
-                  }}
-                  disabled={!selectedProblem || launchBusy}
-                >
-                  {launchBusy ? 'Launching…' : 'Launch swarm'}
-                </button>
-              </div>
-            </div>
-
-            <div className="freeform-toolbar-panel-section">
-              <div className="freeform-toolbar-panel-problem">
-                <div>
-                  <h3>{selectedProblem?.butlerRoomId ? 'Room runs' : 'Recent runs'}</h3>
-                  <p>
-                    {selectedProblem?.butlerRoomId
-                      ? 'Runs attached to the selected problem room.'
-                      : 'Latest runs seen by the Butler bridge.'}
-                  </p>
-                </div>
-              </div>
-
-              {visibleRuns.length > 0 ? (
-                <SwarmRunList
-                  runs={visibleRuns}
-                  currentRunId={currentRunId || selectedProblem?.lastSwarmRunId}
-                  onSelectRun={setCurrentRunId}
-                />
-              ) : (
-                <p className="freeform-toolbar-panel-hint">No swarm runs yet.</p>
-              )}
-            </div>
-
-            {traceEnabled ? (
-              <div className="freeform-toolbar-panel-section">
-                <div className="freeform-toolbar-panel-problem">
-                  <div>
-                    <h3>Selection trace</h3>
-                    <p>Live pointer and selection events from this browser session.</p>
-                  </div>
-                  <span className="freeform-run-pill">{selectedIds.length} selected</span>
-                </div>
-                {selectionTrace.length > 0 ? (
-                  <ul className="freeform-trace-list">
-                    {selectionTrace.map((entry) => (
-                      <li key={entry.id} className="freeform-trace-item">
-                        <strong>{entry.label}</strong>
-                        <span>{entry.detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="freeform-toolbar-panel-hint">No events traced yet.</p>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </section>
-        ) : null}
         {boardNotice ? (
           <p
             className={`freeform-toolbar-notice${boardNotice.tone === 'error' ? ' freeform-toolbar-notice--error' : ''}`}
@@ -1690,6 +3446,580 @@ export default function BoardView() {
         onPointerCancel={endViewportPointer}
         onDoubleClick={onViewportDoubleClick}
       >
+        {presetPickerOpen && onCreateWorkspace ? (
+          <PresetPicker
+            presets={workspacePresets}
+            onSelect={(presetId) => {
+              setPresetPickerOpen(false)
+              onCreateWorkspace(presetId)
+            }}
+            onDismiss={() => setPresetPickerOpen(false)}
+          />
+        ) : null}
+        {toolbarPanelOpen ? (
+          <div className="freeform-toolbar-panel-wrap">
+            <section className="freeform-toolbar-panel" aria-label="Butler swarm launcher">
+              <div className="freeform-toolbar-panel-header">
+                <div>
+                  <h2>Butler bridge</h2>
+                  <p>Launch a real swarm from one selected problem bubble.</p>
+                </div>
+                <div className="freeform-toolbar-panel-status">
+                  <span
+                    className={`freeform-run-pill${bridgeHealth?.ok ? ' is-online' : ' is-offline'}`}
+                  >
+                    {bridgeBusy ? 'checking' : bridgeHealth?.ok ? 'online' : 'offline'}
+                  </span>
+                  {bridgeHealth?.service ? <span>{bridgeHealth.service}</span> : null}
+                  {bridgeHealth?.version ? <span>v{bridgeHealth.version}</span> : null}
+                </div>
+              </div>
+
+              <div className="freeform-toolbar-panel-grid">
+                <div className="freeform-toolbar-panel-section">
+                  <p className="freeform-toolbar-panel-hint">
+                    Launching stays room-first. Infrastructure wiring is tucked away unless you need to pair or troubleshoot the bridge.
+                  </p>
+                  <details className="freeform-toolbar-panel-disclosure">
+                    <summary>Infrastructure settings</summary>
+                    <div className="freeform-toolbar-panel-disclosure-body">
+                      <label className="freeform-field">
+                        <span>Bridge URL</span>
+                        <input
+                          type="url"
+                          value={bridgeSettings.url}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            persistBridgeSettings({ ...bridgeSettings, url: e.target.value })
+                          }}
+                          placeholder="http://127.0.0.1:8765"
+                        />
+                      </label>
+                      <label className="freeform-field">
+                        <span>Token</span>
+                        <input
+                          type="password"
+                          value={bridgeSettings.token}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            persistBridgeSettings({ ...bridgeSettings, token: e.target.value })
+                          }}
+                          placeholder="Optional on localhost"
+                        />
+                      </label>
+                      <div className="freeform-toolbar-panel-actions">
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => {
+                            void pairLocalBridgeAction()
+                          }}
+                          disabled={bridgeBusy}
+                        >
+                          {bridgeBusy ? 'Pairing…' : 'Pair local'}
+                        </button>
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => {
+                            void refreshBridgeState(false)
+                          }}
+                          disabled={bridgeBusy}
+                        >
+                          Check bridge
+                        </button>
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => {
+                            void refreshRuns(false)
+                          }}
+                          disabled={bridgeBusy}
+                        >
+                          Refresh runs
+                        </button>
+                      </div>
+                      <p className="freeform-toolbar-panel-hint">
+                        Localhost browser calls can use the local Butler bridge without a manual token.
+                      </p>
+                    </div>
+                  </details>
+                </div>
+
+                <div className="freeform-toolbar-panel-section">
+                  <div className="freeform-toolbar-panel-problem">
+                    <div>
+                      <h3>Paperclip control plane</h3>
+                      <p>Create a Paperclip issue, write the DewDrops Swarm OS packet into the plan doc, and wake the selected agents.</p>
+                    </div>
+                    <span className={`freeform-run-pill${paperclipOnline ? ' is-online' : ' is-offline'}`}>
+                      {paperclipBusy ? 'syncing' : paperclipOnline ? 'online' : 'offline'}
+                    </span>
+                  </div>
+
+                  <p className="freeform-toolbar-panel-hint">
+                    Keep the room and swarm choices in front; only open infrastructure settings when you need to wire or resync the control plane.
+                  </p>
+                  <details className="freeform-toolbar-panel-disclosure">
+                    <summary>Infrastructure settings</summary>
+                    <div className="freeform-toolbar-panel-disclosure-body">
+                      <label className="freeform-field">
+                        <span>Paperclip URL</span>
+                        <input
+                          type="url"
+                          value={paperclipSettings.url}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            persistPaperclipSettings({ ...paperclipSettings, url: e.target.value })
+                          }}
+                          placeholder="http://127.0.0.1:3100"
+                        />
+                      </label>
+
+                      <label className="freeform-field">
+                        <span>Token</span>
+                        <input
+                          type="password"
+                          value={paperclipSettings.token}
+                          onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                            persistPaperclipSettings({ ...paperclipSettings, token: e.target.value })
+                          }}
+                          placeholder="Optional in local trusted mode"
+                        />
+                      </label>
+
+                      <div className="freeform-toolbar-panel-actions">
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => {
+                            void refreshPaperclipState(false, selectedProblemPaperclipCompanyId)
+                          }}
+                          disabled={paperclipBusy}
+                        >
+                          Sync Paperclip
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+
+                  <div className="freeform-toolbar-panel-form-row">
+                    <label className="freeform-field">
+                      <span>Company</span>
+                      <select
+                        value={selectedProblemPaperclipCompanyId}
+                        disabled={!selectedProblem || paperclipBusy}
+                        onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                          if (!selectedProblem) return
+                          const nextCompanyId = e.target.value.trim()
+                          updateSelectedProblemCard((problem) => ({
+                            ...problem,
+                            paperclipCompanyId: nextCompanyId || undefined,
+                            paperclipProjectId: undefined,
+                            paperclipAgentIds: undefined,
+                            paperclipLeadAgentId: undefined,
+                          }))
+                          void refreshPaperclipState(true, nextCompanyId)
+                        }}
+                      >
+                        <option value="">Select company</option>
+                        {paperclipCompanies.map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="freeform-field">
+                      <span>Project</span>
+                      <select
+                        value={selectedProblemPaperclipProjectId}
+                        disabled={!selectedProblem || !selectedProblemPaperclipCompanyId || paperclipBusy}
+                        onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                          if (!selectedProblem) return
+                          const nextProjectId = e.target.value.trim()
+                          updateSelectedProblemCard((problem) => ({
+                            ...problem,
+                            paperclipProjectId: nextProjectId || undefined,
+                          }))
+                        }}
+                      >
+                        <option value="">No project</option>
+                        {paperclipProjects.map((project) => (
+                          <option key={project.id} value={project.id}>
+                            {project.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="freeform-field">
+                    <span>Lead agent</span>
+                    <select
+                      value={selectedProblemPaperclipLeadAgentId}
+                      disabled={!selectedProblem || !selectedProblemPaperclipCompanyId || paperclipBusy}
+                      onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                        if (!selectedProblem) return
+                        const nextLeadAgentId = e.target.value.trim()
+                        updateSelectedProblemCard((problem) => {
+                          const currentAgentIds = problem.paperclipAgentIds ?? []
+                          const nextAgentIds =
+                            nextLeadAgentId && !currentAgentIds.includes(nextLeadAgentId)
+                              ? [...currentAgentIds, nextLeadAgentId]
+                              : currentAgentIds
+                          return {
+                            ...problem,
+                            paperclipLeadAgentId: nextLeadAgentId || undefined,
+                            paperclipAgentIds: nextAgentIds.length > 0 ? nextAgentIds : undefined,
+                          }
+                        })
+                      }}
+                    >
+                      <option value="">No lead selected</option>
+                      {paperclipAgents.map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="freeform-field">
+                    <span>Swarm agents</span>
+                    {paperclipAgents.length > 0 ? (
+                      <div className="freeform-paperclip-agent-list">
+                        {paperclipAgents.map((agent) => {
+                          const checked = selectedProblemPaperclipAgentIds.includes(agent.id)
+                          const detail =
+                            agent.title ||
+                            agent.role ||
+                            (agent.adapterType ? agent.adapterType.replace(/_/g, ' ') : '') ||
+                            'Paperclip agent'
+                          return (
+                            <label
+                              key={agent.id}
+                              className={`freeform-paperclip-agent-row${checked ? ' is-selected' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={!selectedProblem || paperclipBusy}
+                                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                  if (!selectedProblem) return
+                                  const nextChecked = e.target.checked
+                                  updateSelectedProblemCard((problem) => {
+                                    const currentAgentIds = problem.paperclipAgentIds ?? []
+                                    const nextAgentIds = nextChecked
+                                      ? [...new Set([...currentAgentIds, agent.id])]
+                                      : currentAgentIds.filter((id) => id !== agent.id)
+                                    const nextLeadAgentId =
+                                      problem.paperclipLeadAgentId === agent.id && !nextChecked
+                                        ? nextAgentIds[0]
+                                        : problem.paperclipLeadAgentId || nextAgentIds[0]
+                                    return {
+                                      ...problem,
+                                      paperclipAgentIds: nextAgentIds.length > 0 ? nextAgentIds : undefined,
+                                      paperclipLeadAgentId: nextLeadAgentId || undefined,
+                                    }
+                                  })
+                                }}
+                              />
+                              <div>
+                                <strong>{agent.name}</strong>
+                                <span>{detail}</span>
+                              </div>
+                              {selectedProblemPaperclipLeadAgentId === agent.id ? (
+                                <span className="freeform-run-pill is-active">lead</span>
+                              ) : null}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="freeform-toolbar-panel-hint">
+                        {selectedProblemPaperclipCompanyId
+                          ? 'No agents returned for this Paperclip company.'
+                          : 'Select a Paperclip company to load its agents.'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="freeform-toolbar-panel-actions">
+                    <button
+                      type="button"
+                      className="freeform-btn freeform-btn--tool is-active"
+                      onClick={() => {
+                        void launchSelectedProblemPaperclip()
+                      }}
+                      disabled={!selectedProblem || paperclipLaunchBusy || paperclipBusy}
+                    >
+                      {paperclipLaunchBusy ? 'Launching…' : 'Launch to Paperclip'}
+                    </button>
+                  </div>
+
+                  <p className="freeform-toolbar-panel-hint">
+                    Paperclip is the local swarm control plane here. DewDrops Swarm OS creates the issue, writes the plan, then wakes the selected Paperclip agents.
+                  </p>
+                  {selectedProblem?.lastPaperclipIssueId ? (
+                    <p className="freeform-toolbar-panel-hint">
+                      Last issue {selectedProblem.lastPaperclipIssueId}
+                      {selectedProblem.lastPaperclipRunId ? ` • last run ${selectedProblem.lastPaperclipRunId}` : ''}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="freeform-toolbar-panel-section">
+                  <div className="freeform-toolbar-panel-problem">
+                    <div>
+                      <h3>{selectedProblem ? selectedProblem.title : 'No problem selected'}</h3>
+                      <p>
+                        {selectedProblem
+                          ? `${selectedProblemAgents.length} agent${selectedProblemAgents.length === 1 ? '' : 's'} in the swarm envelope`
+                          : 'Select exactly one problem bubble to launch a swarm.'}
+                      </p>
+                    </div>
+                    {selectedProblem?.lastSwarmRunId ? (
+                      <span className="freeform-run-pill">
+                        Last run {selectedProblem.lastSwarmRunId.slice(-6)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="freeform-toolbar-panel-form-row">
+                    <label className="freeform-field">
+                      <span>Template</span>
+                      <select
+                        value={launchTemplate}
+                        onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                          setSelectedProblemTemplate(e.target.value as ButlerSwarmTemplate)
+                        }
+                        disabled={!selectedProblem || launchBusy}
+                      >
+                        {SWARM_TEMPLATE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="freeform-toolbar-panel-form-row">
+                    <label className="freeform-field">
+                      <span>Room width</span>
+                      <input
+                        type="number"
+                        min={160}
+                        max={720}
+                        step={10}
+                        value={selectedProblemRoomWidth}
+                        disabled={!selectedProblem}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                          if (!selectedProblem) return
+                          const nextWidth = clampNumber(
+                            e.target.valueAsNumber || selectedProblemRoomWidth,
+                            160,
+                            720,
+                          )
+                          updateSelectedProblemCard((problem) => ({
+                            ...problem,
+                            width: nextWidth,
+                            problemBaseWidth: nextWidth,
+                          }))
+                        }}
+                      />
+                    </label>
+                    <label className="freeform-field">
+                      <span>Room height</span>
+                      <input
+                        type="number"
+                        min={100}
+                        max={520}
+                        step={10}
+                        value={selectedProblemRoomHeight}
+                        disabled={!selectedProblem}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                          if (!selectedProblem) return
+                          const nextHeight = clampNumber(
+                            e.target.valueAsNumber || selectedProblemRoomHeight,
+                            100,
+                            520,
+                          )
+                          updateSelectedProblemCard((problem) => ({
+                            ...problem,
+                            height: nextHeight,
+                            problemBaseHeight: nextHeight,
+                          }))
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="freeform-toolbar-panel-form-row">
+                    <label className="freeform-field">
+                      <span>Membrane pad</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={120}
+                        step={4}
+                        value={selectedProblemEnvelopePad}
+                        disabled={!selectedProblem}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                          if (!selectedProblem) return
+                          const nextPad = clampNumber(
+                            e.target.valueAsNumber || selectedProblemEnvelopePad,
+                            0,
+                            120,
+                          )
+                          updateSelectedProblemCard((problem) => ({
+                            ...problem,
+                            swarmEnvelopePad: nextPad,
+                          }))
+                        }}
+                      />
+                    </label>
+                    <label className="freeform-field">
+                      <span>Card width</span>
+                      <input
+                        type="number"
+                        min={96}
+                        max={260}
+                        step={8}
+                        value={selectedProblemAgentWidth}
+                        disabled={!selectedProblem}
+                        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                          if (!selectedProblem) return
+                          const nextWidth = clampNumber(
+                            e.target.valueAsNumber || selectedProblemAgentWidth,
+                            96,
+                            260,
+                          )
+                          updateSelectedProblemCard((problem) => ({
+                            ...problem,
+                            swarmAgentMinWidth: nextWidth,
+                          }))
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <label className="freeform-field">
+                    <span>Objective</span>
+                    <textarea
+                      value={launchObjective}
+                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setLaunchObjective(e.target.value)}
+                      placeholder="Describe what this swarm should do."
+                      disabled={!selectedProblem || launchBusy}
+                      rows={5}
+                    />
+                  </label>
+                  {selectedProblemModelPacket ? (
+                    <>
+                      <p className="freeform-toolbar-panel-hint">
+                        Packet route: <strong>{selectedProblemModelPacket.route.strategy}</strong>
+                        {' '}
+                        via
+                        {' '}
+                        <strong>{selectedProblemModelPacket.route.primary}</strong>
+                        {' '}
+                        with
+                        {' '}
+                        <strong>{selectedProblemModelPacket.stats.lineCount}</strong>
+                        {' '}
+                        lines /
+                        {' '}
+                        <strong>{selectedProblemModelPacket.stats.charCount}</strong>
+                        {' '}
+                        chars. {selectedProblemModelPacket.route.reason}
+                      </p>
+
+                      <div className="freeform-toolbar-panel-actions">
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => setLaunchObjective(selectedProblemModelPacket.objectiveText)}
+                          disabled={!selectedProblem || launchBusy}
+                        >
+                          Reset from packet
+                        </button>
+                        <button
+                          type="button"
+                          className="freeform-btn freeform-btn--tool"
+                          onClick={() => {
+                            void copyInspectorText('model packet', selectedProblemModelPacket.packetText)
+                          }}
+                          disabled={!selectedProblem}
+                        >
+                          Copy packet
+                        </button>
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div className="freeform-toolbar-panel-actions">
+                    <button
+                      type="button"
+                      className="freeform-btn freeform-btn--tool is-active"
+                      onClick={() => {
+                        void launchSelectedProblemSwarm()
+                      }}
+                      disabled={!selectedProblem || launchBusy}
+                    >
+                      {launchBusy ? 'Launching…' : 'Launch swarm'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="freeform-toolbar-panel-section">
+                  <div className="freeform-toolbar-panel-problem">
+                    <div>
+                      <h3>{selectedProblem?.butlerRoomId ? 'Room runs' : 'Recent runs'}</h3>
+                      <p>
+                        {selectedProblem?.butlerRoomId
+                          ? 'Runs attached to the selected problem room.'
+                          : 'Latest runs seen by the Butler bridge.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {visibleRuns.length > 0 ? (
+                    <SwarmRunList
+                      runs={visibleRuns}
+                      currentRunId={currentRunId || selectedProblem?.lastSwarmRunId}
+                      onSelectRun={setCurrentRunId}
+                    />
+                  ) : (
+                    <p className="freeform-toolbar-panel-hint">No swarm runs yet.</p>
+                  )}
+                </div>
+
+                {traceEnabled ? (
+                  <div className="freeform-toolbar-panel-section">
+                    <div className="freeform-toolbar-panel-problem">
+                      <div>
+                        <h3>Selection trace</h3>
+                        <p>Live pointer and selection events from this browser session.</p>
+                      </div>
+                      <span className="freeform-run-pill">{selectedIds.length} selected</span>
+                    </div>
+                    {selectionTrace.length > 0 ? (
+                      <ul className="freeform-trace-list">
+                        {selectionTrace.map((entry) => (
+                          <li key={entry.id} className="freeform-trace-item">
+                            <strong>{entry.label}</strong>
+                            <span>{entry.detail}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="freeform-toolbar-panel-hint">No events traced yet.</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
         {marquee ? (
           <div className="freeform-marquee-layer" aria-hidden>
             <div
@@ -1714,7 +4044,9 @@ export default function BoardView() {
               wires={wires}
               handshakeFocus={handshakeFocus}
               selected={selectedIds.includes(c.id)}
+              activeTerminal={activeTerminalCardId === c.id}
               camera={camera}
+              problemSessionSummary={c.kind === 'problem' ? problemSessionMetaById.get(c.id)?.summary : undefined}
               problemRunStatus={c.kind === 'problem' ? latestProblemRunById.get(c.id)?.status : undefined}
               problemRunSummary={c.kind === 'problem' ? latestProblemRunById.get(c.id)?.summary : undefined}
               problemRunId={
@@ -1726,6 +4058,7 @@ export default function BoardView() {
               agentRunSummary={
                 c.kind === 'agent' ? latestAgentRunStateByCardId.get(c.id)?.result_summary : undefined
               }
+              agentTerminalBusy={workerTerminalBusyIds.includes(c.id)}
               onSelect={(shiftKey) =>
                 flushSync(() => {
                   setSelectedIds((prev) => {
@@ -1792,6 +4125,13 @@ export default function BoardView() {
                   return next
                 })
               }
+              onProblemBriefChange={updateProblemBriefCard}
+              onAgentTerminalStart={startWorkerTerminalAgent}
+              onAgentTerminalStop={stopWorkerTerminalAgent}
+              onAgentTerminalRefresh={refreshWorkerTerminalAgent}
+              onAgentTerminalReturnArtifact={returnWorkerTerminalArtifact}
+              onAgentTerminalSendInput={sendWorkerTerminalInput}
+              onAgentTerminalResize={resizeWorkerTerminalAgent}
               onReleaseNod={onReleaseNod}
               onMarkUserMovingCard={() => {
                 const movingIds =
@@ -1812,24 +4152,132 @@ export default function BoardView() {
             roomId={selectedProblem.butlerRoomId}
             lastRunId={selectedProblem.lastSwarmRunId}
             bridgeHealth={bridgeHealth}
+            workspaceMode={workspaceMode}
+            workspaceOptions={WORKSPACE_MODE_OPTIONS}
+            launchSurface={selectedProblemBlueprint!.launchSurface}
+            capabilityPackId={resolveCapabilityPackId(selectedProblem) ?? ''}
+            capabilityPackOptions={CAPABILITY_PACK_OPTIONS}
+            capabilityProfileId={selectedProblem.capabilityProfileId ?? ''}
+            capabilityProfileOptions={CAPABILITY_PROFILE_OPTIONS}
+            swarmRecipeId={selectedProblem.swarmRecipeId ?? ''}
+            swarmRecipeOptions={SWARM_RECIPE_OPTIONS}
+            briefSpec={selectedProblemBriefSpec!}
+            briefVersion={selectedProblemBriefVersion}
+            launchSurfaceOptions={LAUNCH_SURFACE_OPTIONS}
             template={launchTemplate}
             templateOptions={SWARM_TEMPLATE_OPTIONS}
             objective={launchObjective}
+            autoContinuationEnabled={!!selectedProblem.autoContinuationEnabled}
             roomWidth={selectedProblemRoomWidth}
             roomHeight={selectedProblemRoomHeight}
             membranePad={selectedProblemEnvelopePad}
             cardWidth={selectedProblemAgentWidth}
+            memoryWing={selectedProblem.memoryWing ?? ''}
+            memoryWingPlaceholder={selectedProblemBlueprint!.memoryWing}
+            memoryRoom={selectedProblem.memoryRoom ?? ''}
+            memoryRoomPlaceholder={selectedProblemBlueprint!.memoryRoom}
+            memorySummary={selectedProblem.memoryContextSummary ?? ''}
+            memorySummaryPlaceholder={selectedProblemBlueprint!.contextSummary}
+            memoryAnchors={formatAnchorInput(selectedProblem.memoryAnchors)}
+            memoryPalaceDraft={formatVisualMemoryPalaceDraft(buildVisualMemoryPalace(selectedProblem))}
+            memoryPalaceLoci={selectedProblemBlueprint!.visualLoci}
+            briefCompartmentAssets={selectedProblem.briefCompartmentAssets ?? []}
+            briefCompartmentOptions={selectedProblemCompartmentOptions}
+            selectedAgent={selectedAgent}
+            workerAgents={selectedProblemAgents}
+            onWorkerTerminalTitleChange={updateAgentTitleById}
+            onWorkerTerminalRuntimeChange={updateAgentRuntimeById}
+            onWorkerTerminalStart={startWorkerTerminalAgent}
+            onWorkerTerminalStop={stopWorkerTerminalAgent}
+            onWorkerTerminalRefresh={refreshWorkerTerminalAgent}
+            onWorkerTerminalSendInput={sendWorkerTerminalInput}
+            onWorkerTerminalReturnArtifact={returnWorkerTerminalArtifact}
+            onWorkerTerminalCheckHost={checkWorkerTerminalAgentHost}
+            onWorkerTerminalRelayClipboard={relayClipboardToWorkerTerminal}
+            onWorkerTerminalCopyShell={copyWorkerTerminalCommand}
+            onWorkerTerminalCopyBootstrap={copyWorkerTerminalBootstrap}
+            workerHostStatusByAlias={workerHostStatusByAlias}
+            workerTerminalBusyIds={workerTerminalBusyIds}
+            phoneBrief={selectedProblem.phoneRelayBrief ?? ''}
+            desktopBrief={selectedProblem.desktopSessionBrief ?? ''}
+            readinessTone={selectedProblemReadiness!.tone}
+            readinessLabel={selectedProblemReadiness!.label}
+            readinessSummary={selectedProblemReadiness!.summary}
+            readinessItems={selectedProblemReadiness!.items}
+            handoffLines={selectedProblemBlueprint!.handoffLines}
+            handoffText={selectedProblemBlueprint!.handoffText}
             runs={visibleRuns}
+            runLedger={selectedProblemRunLedger}
             currentRunId={currentRunId}
             currentRunReport={currentRunReport}
             reportBusy={currentRunReportBusy}
             launchBusy={launchBusy}
             stopBusy={stopBusy}
-            onTemplateChange={setLaunchTemplate}
+            onWorkspaceModeChange={setWorkspaceMode}
+            onLaunchSurfaceChange={(value) => {
+              updateSelectedProblemCard((problem) =>
+                syncCapabilityPack({
+                  ...problem,
+                  preferredLaunchSurface: value,
+                }),
+              )
+            }}
+            onCapabilityPackChange={(value) => {
+              const pack = value.trim() ? getCapabilityPack(value.trim()) : undefined
+              if (!pack) {
+                updateSelectedProblemCard((problem) => ({
+                  ...problem,
+                  capabilityPackId: undefined,
+                }))
+                return
+              }
+              setLaunchTemplate(pack.template)
+              updateSelectedProblemCard((problem) =>
+                syncProblemBriefBindings(applyCapabilityPack(problem, pack)),
+              )
+            }}
+            onCapabilityProfileChange={(value) => {
+              const capabilityProfileId = value.trim() || undefined
+              updateSelectedProblemCard((problem) =>
+                syncCapabilityPack(
+                  syncProblemBriefBindings({
+                    ...problem,
+                    capabilityProfileId,
+                  }),
+                ),
+              )
+            }}
+            onSwarmRecipeChange={(value) => {
+              const recipe = value.trim() ? getSwarmRecipe(value.trim()) : undefined
+              if (recipe) {
+                setLaunchTemplate(recipe.template)
+              }
+              updateSelectedProblemCard((problem) =>
+                syncCapabilityPack(
+                  syncProblemBriefBindings({
+                    ...problem,
+                    swarmRecipeId: value.trim() || undefined,
+                    swarmTemplate: recipe?.template ?? problem.swarmTemplate,
+                  }),
+                ),
+              )
+            }}
+            onBriefChange={(value) => {
+              if (!selectedProblem) return
+              updateProblemBriefCard(selectedProblem.id, value)
+            }}
+            onTemplateChange={setSelectedProblemTemplate}
             onObjectiveChange={setLaunchObjective}
+            onAutoContinuationEnabledChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                autoContinuationEnabled: value,
+                lastAutoContinuationSourceRunId: value ? problem.lastAutoContinuationSourceRunId : undefined,
+              }))
+            }}
             onRoomWidthChange={(value) => {
               const nextWidth = clampNumber(value, 160, 720)
-              updateSelectedProblemLayout((problem) => ({
+              updateSelectedProblemCard((problem) => ({
                 ...problem,
                 width: nextWidth,
                 problemBaseWidth: nextWidth,
@@ -1837,7 +4285,7 @@ export default function BoardView() {
             }}
             onRoomHeightChange={(value) => {
               const nextHeight = clampNumber(value, 100, 520)
-              updateSelectedProblemLayout((problem) => ({
+              updateSelectedProblemCard((problem) => ({
                 ...problem,
                 height: nextHeight,
                 problemBaseHeight: nextHeight,
@@ -1845,17 +4293,73 @@ export default function BoardView() {
             }}
             onMembranePadChange={(value) => {
               const nextPad = clampNumber(value, 0, 120)
-              updateSelectedProblemLayout((problem) => ({
+              updateSelectedProblemCard((problem) => ({
                 ...problem,
                 swarmEnvelopePad: nextPad,
               }))
             }}
             onCardWidthChange={(value) => {
               const nextWidth = clampNumber(value, 96, 260)
-              updateSelectedProblemLayout((problem) => ({
+              updateSelectedProblemCard((problem) => ({
                 ...problem,
                 swarmAgentMinWidth: nextWidth,
               }))
+            }}
+            onMemoryWingChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                memoryWing: value.trim() || undefined,
+              }))
+            }}
+            onMemoryRoomChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                memoryRoom: value.trim() || undefined,
+              }))
+            }}
+            onMemorySummaryChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                memoryContextSummary: value.trim() || undefined,
+              }))
+            }}
+            onMemoryAnchorsChange={(value) => {
+              const anchors = parseAnchorInput(value)
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                memoryAnchors: anchors.length > 0 ? anchors : undefined,
+              }))
+            }}
+            onMemoryPalaceDraftChange={(value) => {
+              const loci = parseVisualMemoryPalaceDraft(value)
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                memoryPalaceLoci: loci.length > 0 ? loci : undefined,
+              }))
+            }}
+            onBriefCompartmentFilesAdd={addSelectedProblemCompartmentFiles}
+            onBriefCompartmentAssetCompartmentChange={moveSelectedProblemCompartmentAsset}
+            onBriefCompartmentAssetRemove={removeSelectedProblemCompartmentAsset}
+            onPhoneBriefChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                phoneRelayBrief: value.trim() || undefined,
+              }))
+            }}
+            onDesktopBriefChange={(value) => {
+              updateSelectedProblemCard((problem) => ({
+                ...problem,
+                desktopSessionBrief: value.trim() || undefined,
+              }))
+            }}
+            onCopyPacket={() => {
+              void copyInspectorText('handoff packet', selectedProblemBlueprint?.handoffText ?? '')
+            }}
+            onCopyObjective={() => {
+              void copyInspectorText('objective', launchObjective)
+            }}
+            onCopyLaunchBrief={() => {
+              void copyInspectorText('launch brief', selectedProblemLaunchBrief)
             }}
             onLaunch={() => {
               void launchSelectedProblemSwarm()
@@ -1867,7 +4371,46 @@ export default function BoardView() {
               void refreshRuns(false)
             }}
             onSelectRun={setCurrentRunId}
+            onArtifactStatusChange={updateSelectedProblemArtifactStatus}
+            onArtifactOpen={openSelectedProblemArtifact}
           />
+        ) : selectedAgent ? (
+          <aside className="freeform-problem-inspector" aria-label="Selected terminal inspector">
+            <div className="freeform-problem-inspector-header">
+              <div>
+                <h2>Selected terminal</h2>
+                <p>The DewDrop is live on the board. Use this panel for shell and session controls.</p>
+              </div>
+              <div className="freeform-problem-inspector-status">
+                <span className="freeform-run-pill">
+                  {selectedAgent.assignedToProblemId ? 'attached' : 'free'}
+                </span>
+              </div>
+            </div>
+            <section className="freeform-problem-inspector-section">
+              <DewDropTerminalCard
+                agent={selectedAgent}
+                busy={workerTerminalBusyIds.includes(selectedAgent.id)}
+                onTitleChange={updateAgentTitleById}
+                onRuntimeChange={updateAgentRuntimeById}
+                onStart={startWorkerTerminalAgent}
+                onStop={stopWorkerTerminalAgent}
+                onRefresh={refreshWorkerTerminalAgent}
+                onSendInput={sendWorkerTerminalInput}
+                onReturnArtifact={returnWorkerTerminalArtifact}
+                onCheckHost={checkWorkerTerminalAgentHost}
+                onRelayClipboard={relayClipboardToWorkerTerminal}
+                onCopyShell={copyWorkerTerminalCommand}
+                onCopyBootstrap={copyWorkerTerminalBootstrap}
+                hostStatusOverride={
+                  selectedAgent.agentRuntime?.vpnAlias?.trim()
+                    ? workerHostStatusByAlias[selectedAgent.agentRuntime.vpnAlias.trim()]
+                    : undefined
+                }
+                autoFocusInput={false}
+              />
+            </section>
+          </aside>
         ) : null}
       </div>
     </div>

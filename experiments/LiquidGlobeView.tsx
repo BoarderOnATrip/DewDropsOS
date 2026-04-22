@@ -491,7 +491,7 @@ export function LiquidGlobeView() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <h1>DewDrops</h1>
+          <h1>DewDrops Swarm OS</h1>
           <p>Your World: liquid planetoid workspace for agentic engineering</p>
         </div>
         <div className="stats">
@@ -582,7 +582,7 @@ export function LiquidGlobeView() {
           }
         }}
       >
-        <svg width={size.width} height={size.height} role="img" aria-label="DewDrops simulation surface">
+        <svg width={size.width} height={size.height} role="img" aria-label="DewDrops Swarm OS simulation surface">
           <defs>
             <radialGradient id="liquidBody" cx="34%" cy="30%" r="72%" gradientUnits="objectBoundingBox">
               <stop offset="0%" stopColor="rgba(230, 252, 255, 0.42)" />

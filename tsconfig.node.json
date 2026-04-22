@@ -20,5 +20,12 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "vitest.setup.ts"]
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "vitest.setup.ts",
+    "src/lib/runtimeBridge.ts",
+    "src/lib/runtimeSessionStore.ts",
+    "src/lib/runtimeSessionTypes.ts"
+  ]
 }

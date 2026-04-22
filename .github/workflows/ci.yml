@@ -1,4 +1,4 @@
-name: DewDrops CI
+name: DewDrops Swarm OS CI
 
 on:
   push:

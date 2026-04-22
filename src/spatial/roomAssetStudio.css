@@ -1,0 +1,499 @@
+.room-asset-studio {
+  --room-asset-ink: #edf6ff;
+  --room-asset-muted: #9db4c9;
+  --room-asset-line: rgba(169, 207, 242, 0.12);
+  --room-asset-panel: rgba(8, 16, 28, 0.9);
+  --room-asset-panel-strong: rgba(10, 19, 33, 0.96);
+  display: grid;
+  gap: 18px;
+  padding: clamp(16px, 2vw, 24px);
+  border: 1px solid rgba(169, 207, 242, 0.14);
+  border-radius: 28px;
+  color: var(--room-asset-ink);
+  background:
+    radial-gradient(circle at 14% 8%, rgba(102, 166, 255, 0.18), transparent 22%),
+    radial-gradient(circle at 82% 16%, rgba(77, 214, 192, 0.12), transparent 18%),
+    linear-gradient(180deg, #050b14 0%, #071120 48%, #04080e 100%);
+}
+
+.room-asset-studio-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.room-asset-studio-kicker {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: #7daed7;
+}
+
+.room-asset-studio-header h2,
+.room-asset-studio-panel-head h3,
+.room-asset-studio-core strong {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+.room-asset-studio-summary {
+  margin: 8px 0 0;
+  max-width: 64ch;
+  color: #dce9f4;
+  line-height: 1.55;
+}
+
+.room-asset-studio-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-asset-studio-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 227, 255, 0.14);
+  background: rgba(7, 17, 30, 0.82);
+  color: #d8ebfb;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.room-asset-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(290px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.room-asset-studio-stage {
+  display: grid;
+  gap: 14px;
+}
+
+.room-asset-studio-shell {
+  position: relative;
+  min-height: 560px;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(196, 227, 255, 0.14);
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 235, 186, 0.2), transparent 18%),
+    radial-gradient(circle at 84% 18%, rgba(106, 177, 255, 0.22), transparent 20%),
+    linear-gradient(180deg, #101927 0%, #162231 35%, #203145 62%, #31251d 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.room-asset-studio-room-light,
+.room-asset-studio-back-wall,
+.room-asset-studio-side-wall,
+.room-asset-studio-door-cut,
+.room-asset-studio-window-cut,
+.room-asset-studio-floor,
+.room-asset-studio-rug,
+.room-asset-studio-desk-shadow,
+.room-asset-studio-zone-layer,
+.room-asset-studio-portal-layer,
+.room-asset-studio-core,
+.room-asset-studio-node {
+  position: absolute;
+}
+
+.room-asset-studio-room-light {
+  left: 50%;
+  top: 5%;
+  width: 44%;
+  height: 24%;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 237, 188, 0.4), transparent 72%);
+  pointer-events: none;
+}
+
+.room-asset-studio-back-wall {
+  inset: 10% 10% 30% 10%;
+  border-radius: 30px 30px 22px 22px;
+  background:
+    linear-gradient(180deg, rgba(250, 252, 255, 0.08), transparent 18%),
+    linear-gradient(180deg, rgba(39, 57, 79, 0.95), rgba(27, 39, 56, 0.96));
+  border: 1px solid rgba(196, 227, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+.room-asset-studio-side-wall {
+  top: 16%;
+  bottom: 28%;
+  width: 18%;
+  border: 1px solid rgba(196, 227, 255, 0.06);
+  background: linear-gradient(180deg, rgba(17, 30, 45, 0.98), rgba(23, 36, 52, 0.9));
+  pointer-events: none;
+}
+
+.room-asset-studio-side-wall.is-left {
+  left: -2%;
+  transform: skewY(12deg);
+}
+
+.room-asset-studio-side-wall.is-right {
+  right: -2%;
+  transform: skewY(-12deg);
+}
+
+.room-asset-studio-door-cut,
+.room-asset-studio-window-cut {
+  border-radius: 18px;
+  border: 1px solid rgba(196, 227, 255, 0.1);
+  background: rgba(8, 15, 25, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(13, 21, 33, 0.3);
+  pointer-events: none;
+}
+
+.room-asset-studio-door-cut {
+  left: 42%;
+  top: 26%;
+  width: 16%;
+  height: 40%;
+}
+
+.room-asset-studio-window-cut {
+  right: 12%;
+  top: 20%;
+  width: 18%;
+  height: 24%;
+  background:
+    radial-gradient(circle at 60% 40%, rgba(132, 192, 255, 0.28), transparent 65%),
+    rgba(8, 18, 30, 0.74);
+}
+
+.room-asset-studio-floor {
+  left: -6%;
+  right: -6%;
+  bottom: -10%;
+  height: 44%;
+  background:
+    linear-gradient(180deg, rgba(70, 53, 41, 0.16), rgba(55, 40, 29, 0.92)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(78, 56, 40, 0.9),
+      rgba(78, 56, 40, 0.9) 12%,
+      rgba(92, 67, 47, 0.94) 12%,
+      rgba(92, 67, 47, 0.94) 24%
+    );
+  transform: perspective(900px) rotateX(70deg);
+  transform-origin: center top;
+  pointer-events: none;
+}
+
+.room-asset-studio-rug {
+  left: 25%;
+  right: 25%;
+  bottom: 14%;
+  height: 22%;
+  border-radius: 42% 42% 26% 26%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(105, 149, 214, 0.22), transparent 64%),
+    linear-gradient(180deg, rgba(34, 51, 71, 0.9), rgba(18, 29, 43, 0.98));
+  border: 1px solid rgba(196, 227, 255, 0.08);
+  pointer-events: none;
+}
+
+.room-asset-studio-desk-shadow {
+  left: 36%;
+  right: 36%;
+  bottom: 24%;
+  height: 8%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(7, 11, 18, 0.6), transparent 72%);
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.room-asset-studio-zone-layer,
+.room-asset-studio-portal-layer {
+  inset: 0;
+}
+
+.room-asset-studio-zone,
+.room-asset-studio-portal,
+.room-asset-studio-panel-item,
+.room-asset-studio-surface-tile {
+  border: 1px solid rgba(196, 227, 255, 0.12);
+  background: rgba(7, 17, 30, 0.88);
+}
+
+.room-asset-studio-node {
+  width: min(190px, 38%);
+  padding: 10px 12px;
+  border-radius: 18px;
+  color: #eef6fd;
+  text-align: left;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+  transform: translate(-50%, -50%);
+}
+
+.room-asset-studio-node {
+  cursor: pointer;
+}
+
+.room-asset-studio-node span,
+.room-asset-studio-locus span,
+.room-asset-studio-panel-item span,
+.room-asset-studio-panel-item small,
+.room-asset-studio-surface-tile span,
+.room-asset-studio-surface-tile small,
+.room-asset-studio-surface-tile p,
+.room-asset-studio-core span,
+.room-asset-studio-empty span,
+.room-asset-studio-note-list {
+  color: var(--room-asset-muted);
+}
+
+.room-asset-studio-node strong,
+.room-asset-studio-locus strong,
+.room-asset-studio-panel-item strong,
+.room-asset-studio-surface-tile span {
+  font-size: 0.84rem;
+}
+
+.room-asset-studio-node p,
+.room-asset-studio-locus p,
+.room-asset-studio-panel-item small,
+.room-asset-studio-surface-tile p,
+.room-asset-studio-surface-tile small,
+.room-asset-studio-core span {
+  margin: 0;
+  line-height: 1.45;
+  font-size: 0.73rem;
+}
+
+.room-asset-studio-zone.is-ready,
+.room-asset-studio-portal.is-ready,
+.room-asset-studio-locus.is-ready,
+.room-asset-studio-panel-item.is-ready,
+.room-asset-studio-surface-tile.is-ready {
+  border-color: rgba(96, 196, 166, 0.26);
+}
+
+.room-asset-studio-zone.is-attention,
+.room-asset-studio-portal.is-attention,
+.room-asset-studio-locus.is-attention,
+.room-asset-studio-panel-item.is-attention,
+.room-asset-studio-surface-tile.is-attention {
+  border-color: rgba(249, 190, 92, 0.28);
+}
+
+.room-asset-studio-zone.is-calm,
+.room-asset-studio-portal.is-calm,
+.room-asset-studio-locus.is-calm,
+.room-asset-studio-panel-item.is-calm,
+.room-asset-studio-surface-tile.is-calm {
+  border-color: rgba(124, 194, 255, 0.22);
+}
+
+.room-asset-studio-zone.is-missing,
+.room-asset-studio-portal.is-missing,
+.room-asset-studio-locus.is-missing,
+.room-asset-studio-panel-item.is-missing,
+.room-asset-studio-surface-tile.is-missing {
+  border-color: rgba(255, 121, 121, 0.2);
+}
+
+.room-asset-studio-zone.is-selected,
+.room-asset-studio-portal.is-selected,
+.room-asset-studio-panel-item.is-selected {
+  border-color: rgba(128, 204, 255, 0.44);
+  box-shadow: 0 0 0 1px rgba(128, 204, 255, 0.12);
+}
+
+.room-asset-studio-zone[type='button'],
+.room-asset-studio-portal[type='button'],
+.room-asset-studio-panel-item[type='button'] {
+  font: inherit;
+  cursor: pointer;
+}
+
+.room-asset-studio-zone[type='button']:hover,
+.room-asset-studio-portal[type='button']:hover,
+.room-asset-studio-panel-item[type='button']:hover {
+  background: rgba(10, 24, 40, 0.96);
+}
+
+.room-asset-studio-zone-work_table {
+  width: min(220px, 42%);
+  background:
+    linear-gradient(180deg, rgba(124, 213, 255, 0.08), transparent 22%),
+    rgba(12, 20, 32, 0.94);
+}
+
+.room-asset-studio-zone-door,
+.room-asset-studio-zone-future_window,
+.room-asset-studio-zone-archive_shelf,
+.room-asset-studio-zone-closet {
+  width: min(160px, 30%);
+}
+
+.room-asset-studio-portal {
+  width: min(154px, 28%);
+  padding: 9px 11px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 206, 126, 0.14), transparent 34%),
+    rgba(11, 20, 33, 0.94);
+}
+
+.room-asset-studio-locus {
+  position: relative;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(196, 227, 255, 0.12);
+  background: rgba(7, 17, 30, 0.88);
+}
+
+.room-asset-studio-core {
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  width: min(270px, 68%);
+  padding: 18px 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(196, 227, 255, 0.14);
+  background:
+    radial-gradient(circle at top left, rgba(124, 213, 255, 0.18), transparent 34%),
+    rgba(9, 19, 33, 0.96);
+  text-align: left;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+}
+
+.room-asset-studio-core-portal {
+  display: grid;
+  gap: 3px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(196, 227, 255, 0.12);
+}
+
+.room-asset-studio-walk-strip {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(196, 227, 255, 0.12);
+  background:
+    radial-gradient(circle at top left, rgba(124, 213, 255, 0.08), transparent 34%),
+    rgba(8, 16, 28, 0.92);
+}
+
+.room-asset-studio-walk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.room-asset-studio-surface-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.room-asset-studio-surface-card,
+.room-asset-studio-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(196, 227, 255, 0.12);
+  background:
+    radial-gradient(circle at top left, rgba(124, 213, 255, 0.08), transparent 34%),
+    rgba(8, 16, 28, 0.92);
+}
+
+.room-asset-studio-surface-grid,
+.room-asset-studio-panel-list {
+  display: grid;
+  gap: 10px;
+}
+
+.room-asset-studio-surface-tile,
+.room-asset-studio-panel-item,
+.room-asset-studio-empty {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.room-asset-studio-surface-tile {
+  min-height: 78px;
+}
+
+.room-asset-studio-empty {
+  gap: 4px;
+  color: #d7e5f2;
+  background: rgba(10, 20, 34, 0.82);
+}
+
+.room-asset-studio-inspector {
+  display: grid;
+  gap: 12px;
+}
+
+.room-asset-studio-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.room-asset-studio-note-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.55;
+}
+
+.room-asset-studio-note-list li + li {
+  margin-top: 8px;
+}
+
+.room-asset-studio-zone:focus-visible,
+.room-asset-studio-portal:focus-visible,
+.room-asset-studio-panel-item:focus-visible {
+  outline: 2px solid rgba(128, 204, 255, 0.72);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1024px) {
+  .room-asset-studio-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .room-asset-studio-shell {
+    min-height: 480px;
+  }
+}
+
+@media (max-width: 720px) {
+  .room-asset-studio-shell {
+    min-height: 560px;
+  }
+
+  .room-asset-studio-surface-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .room-asset-studio-node,
+  .room-asset-studio-portal,
+  .room-asset-studio-locus {
+    width: min(180px, 46%);
+  }
+}

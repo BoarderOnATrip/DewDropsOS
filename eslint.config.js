@@ -29,4 +29,10 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/freeform/BoardView.tsx'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
 ])

@@ -1,0 +1,463 @@
+.phone-relay-shell {
+  min-height: 100vh;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+  color: #ecf6ff;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(76, 134, 255, 0.16), transparent 26%),
+    radial-gradient(circle at 100% 10%, rgba(69, 214, 255, 0.12), transparent 22%),
+    linear-gradient(180deg, #06111f 0%, #071421 52%, #040b14 100%);
+  font-family: Inter, Avenir, 'Helvetica Neue', Arial, sans-serif;
+  overscroll-behavior: none;
+}
+
+.phone-relay-hero {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 20px;
+  border: 1px solid rgba(168, 220, 255, 0.18);
+  border-radius: 24px;
+  background: rgba(4, 13, 24, 0.74);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.phone-relay-hero-copy h1,
+.phone-relay-panel-head h2,
+.phone-relay-section-card-head h3 {
+  margin: 0;
+}
+
+.phone-relay-kicker,
+.phone-relay-section-label {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: #7fb7e4;
+}
+
+.phone-relay-hero-copy h1 {
+  font-size: clamp(1.7rem, 6vw, 3rem);
+  line-height: 1.02;
+}
+
+.phone-relay-subtitle {
+  margin: 8px 0 0;
+  color: #9db8d1;
+  line-height: 1.45;
+}
+
+.phone-relay-room-strip {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(128, 204, 255, 0.16);
+  background:
+    radial-gradient(circle at top right, rgba(104, 180, 255, 0.16), transparent 30%),
+    rgba(6, 15, 27, 0.78);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+}
+
+.phone-relay-room-strip-copy h2 {
+  margin: 2px 0 6px;
+  font-size: clamp(1.2rem, 4.5vw, 1.7rem);
+  line-height: 1.08;
+}
+
+.phone-relay-room-strip-copy p {
+  margin: 0;
+  color: #9bb3c9;
+  line-height: 1.45;
+}
+
+.phone-relay-room-strip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phone-relay-room-strip-meta span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(171, 216, 255, 0.12);
+  background: rgba(9, 22, 36, 0.78);
+  color: #cae0f3;
+  font-size: 0.8rem;
+}
+
+.phone-relay-status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phone-relay-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(171, 216, 255, 0.18);
+  background: rgba(7, 20, 34, 0.78);
+  color: #d9ecfb;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.phone-relay-chip.is-ready {
+  border-color: rgba(96, 196, 166, 0.32);
+  background: rgba(14, 57, 50, 0.75);
+  color: #bbf3df;
+}
+
+.phone-relay-chip.is-attention {
+  border-color: rgba(249, 190, 92, 0.3);
+  background: rgba(70, 47, 14, 0.78);
+  color: #ffdca7;
+}
+
+.phone-relay-chip.is-missing {
+  border-color: rgba(255, 121, 121, 0.28);
+  background: rgba(64, 23, 26, 0.8);
+  color: #ffc7c7;
+}
+
+.phone-relay-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.phone-relay-panel {
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(168, 220, 255, 0.16);
+  background: rgba(4, 12, 22, 0.72);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+}
+
+.phone-relay-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.phone-relay-panel-head p {
+  color: #8eb2d1;
+}
+
+.phone-relay-detail-copy {
+  margin: 0;
+  color: #b9ccdc;
+  line-height: 1.5;
+}
+
+.phone-relay-empty,
+.phone-relay-empty-copy {
+  color: #9ab4c9;
+  line-height: 1.45;
+}
+
+.phone-relay-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #ecf6ff;
+}
+
+.phone-relay-empty p {
+  margin: 0;
+}
+
+.phone-relay-empty-detail {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+  text-align: center;
+}
+
+.phone-relay-problem-list {
+  display: grid;
+  gap: 12px;
+}
+
+.phone-relay-problem-card {
+  border-radius: 20px;
+  border: 1px solid rgba(171, 216, 255, 0.14);
+  background: rgba(8, 18, 31, 0.86);
+  overflow: hidden;
+}
+
+.phone-relay-problem-card.is-selected {
+  border-color: rgba(128, 204, 255, 0.36);
+  box-shadow: 0 0 0 1px rgba(128, 204, 255, 0.12);
+}
+
+.phone-relay-problem-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 14px;
+  cursor: pointer;
+}
+
+.phone-relay-problem-button strong,
+.phone-relay-run strong,
+.phone-relay-brief span,
+.phone-relay-check strong {
+  font-weight: 650;
+}
+
+.phone-relay-problem-head,
+.phone-relay-section-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.phone-relay-problem-chip-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.phone-relay-problem-button p {
+  margin: 10px 0 12px;
+  color: #9fb8cc;
+  line-height: 1.45;
+}
+
+.phone-relay-problem-meta,
+.phone-relay-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #86a5bf;
+  font-size: 0.8rem;
+}
+
+.phone-relay-problem-meta span,
+.phone-relay-run-meta span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(11, 24, 39, 0.92);
+}
+
+.phone-relay-detail-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.phone-relay-section-card {
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(171, 216, 255, 0.12);
+  background: rgba(7, 17, 28, 0.82);
+}
+
+.phone-relay-room-essentials {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 10px;
+}
+
+.phone-relay-room-essence {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(171, 216, 255, 0.08);
+  background: rgba(10, 23, 37, 0.88);
+}
+
+.phone-relay-room-essence span {
+  color: #a6bdd0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.phone-relay-room-essence strong {
+  color: #f4f9ff;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.phone-relay-section-card p {
+  margin: 0;
+}
+
+.phone-relay-checklist,
+.phone-relay-packet-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phone-relay-checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.phone-relay-check {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(10, 23, 37, 0.88);
+  border: 1px solid rgba(171, 216, 255, 0.08);
+}
+
+.phone-relay-check span {
+  color: #a3b8cb;
+  line-height: 1.35;
+}
+
+.phone-relay-check.is-ready {
+  border-color: rgba(96, 196, 166, 0.18);
+}
+
+.phone-relay-check.is-attention {
+  border-color: rgba(249, 190, 92, 0.18);
+}
+
+.phone-relay-check.is-missing {
+  border-color: rgba(255, 121, 121, 0.16);
+}
+
+.phone-relay-packet-list {
+  display: grid;
+  gap: 8px;
+  color: #bed1e2;
+  font-size: 0.88rem;
+}
+
+.phone-relay-packet-list li {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(10, 23, 36, 0.94);
+  border: 1px solid rgba(171, 216, 255, 0.08);
+  overflow-wrap: anywhere;
+}
+
+.phone-relay-briefs {
+  display: grid;
+  gap: 10px;
+}
+
+.phone-relay-brief {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(10, 23, 37, 0.88);
+  border: 1px solid rgba(171, 216, 255, 0.08);
+}
+
+.phone-relay-brief span {
+  color: #b5cce0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.phone-relay-brief p {
+  color: #e3eef9;
+  line-height: 1.45;
+}
+
+.phone-relay-palace-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.phone-relay-palace-card {
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(171, 216, 255, 0.1);
+  background:
+    radial-gradient(circle at top right, rgba(125, 211, 252, 0.14), transparent 42%),
+    rgba(10, 23, 37, 0.9);
+}
+
+.phone-relay-palace-card.is-north_star {
+  border-color: rgba(255, 214, 10, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(255, 214, 10, 0.16), transparent 42%),
+    rgba(10, 23, 37, 0.9);
+}
+
+.phone-relay-palace-card strong {
+  color: #f3f9ff;
+  font-size: 0.9rem;
+}
+
+.phone-relay-palace-card p {
+  color: #c0d4e6;
+  line-height: 1.45;
+}
+
+.phone-relay-run {
+  display: grid;
+  gap: 8px;
+}
+
+.phone-relay-run p {
+  color: #a7bdd1;
+  line-height: 1.45;
+}
+
+.phone-relay-focus-button {
+  border: 1px solid rgba(128, 204, 255, 0.36);
+  background: rgba(18, 48, 79, 0.9);
+  color: #f0f8ff;
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.phone-relay-focus-button:hover,
+.phone-relay-problem-button:hover {
+  background: rgba(16, 34, 56, 0.94);
+}
+
+@media (min-width: 900px) {
+  .phone-relay-shell {
+    padding: 20px;
+  }
+
+  .phone-relay-hero {
+    grid-template-columns: minmax(0, 1.15fr) auto;
+    align-items: end;
+  }
+
+  .phone-relay-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+    align-items: start;
+  }
+
+  .phone-relay-panel-detail {
+    position: sticky;
+    top: 20px;
+  }
+
+  .phone-relay-room-strip {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}

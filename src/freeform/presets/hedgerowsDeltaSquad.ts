@@ -1,3 +1,4 @@
+import { defaultTerminalRuntime } from '../agentRuntime'
 import type { WorkflowCard } from '../types'
 
 const HEDW_PROBLEM_ID = 'hedw-problem'
@@ -24,6 +25,7 @@ function agent(
     kind: 'agent',
     assignedToProblemId: null,
     management,
+    agentRuntime: defaultTerminalRuntime(id, title),
   }
 }
 
@@ -44,6 +46,47 @@ export function hedgerowsDeltaSquadCards(): WorkflowCard[] {
       color: '#34c759',
       kind: 'problem',
       problemShape: 'panel',
+      swarmTemplate: 'build',
+      preferredLaunchSurface: 'hybrid',
+      memoryWing: 'hedgerows',
+      memoryRoom: 'launch-garden',
+      memoryContextSummary:
+        'Cross-device execution room for taking Hedgerows 2.0 from concept into a real, testable product and pilot pipeline.',
+      memoryAnchors: [
+        'compartment/hedgerows/market-map',
+        'entity/hedgerows/pilot-sites',
+        'room/paired-phone-relay',
+      ],
+      memoryPalaceLoci: [
+        {
+          id: 'hedw-north-star',
+          title: 'North Star Gate',
+          kind: 'north_star',
+          detail: 'Ship a credible MVP, validate the install path, and keep the phone and desktop surfaces in one shared mission loop.',
+        },
+        {
+          id: 'hedw-launch-room',
+          title: 'Launch Garden',
+          kind: 'room',
+          detail: 'The main coordination room for product, pilot, and build decisions.',
+        },
+        {
+          id: 'hedw-market-map',
+          title: 'Market Map Compartment',
+          kind: 'artifact',
+          detail: 'compartment/hedgerows/market-map',
+        },
+        {
+          id: 'hedw-phone-relay',
+          title: 'Phone Relay Arch',
+          kind: 'portal',
+          detail: 'room/paired-phone-relay',
+        },
+      ],
+      phoneRelayBrief:
+        'Capture field notes, screen fast decisions, and escalate only blockers that need a live approval.',
+      desktopSessionBrief:
+        'Use the desktop session for deep implementation, synthesis, regulatory review, and durable planning decisions.',
       mission: [
         'Self-watering root and plant fences that mature into living walls — hedgerows 2.0 for privacy, ecology, and place-making.',
         'North star: ship a credible MVP, validate agronomy and install path, and stay on the right side of water, structure, and property-line reality.',
@@ -72,6 +115,14 @@ export function hedgerowsDeltaSquadCards(): WorkflowCard[] {
     agent('hedw-video', 'Video & motion', -145, 215, '#ff6482'),
     agent('hedw-copy', 'Content & copywriter', 55, 215, '#ff9ff3'),
     agent('hedw-brainstorm', 'Brainstorm / ideation partner', -305, 235, '#c4c4c4'),
+    agent('hedw-memory', 'Memory palace architect', -610, -120, '#7dd3a7'),
+    agent('hedw-context', 'Context archivist', -610, 20, '#8fe3ff'),
+    agent('hedw-phone', 'Phone companion product lead', -610, 160, '#4ecdc4'),
+    agent('hedw-voice', 'Voice / call flow designer', -610, 300, '#ffb86c'),
+    agent('hedw-mobile-eng', 'Mobile product engineer', 565, -120, '#6c8cff'),
+    agent('hedw-sync', 'Local-first sync engineer', 565, 20, '#34c759'),
+    agent('hedw-device-qa', 'Device QA & field testing', 565, 160, '#ffd166'),
+    agent('hedw-console', 'Desktop operator console', 565, 300, '#ff6b6b'),
   ]
 }
 

@@ -1,7 +1,7 @@
-# DewDrops — Cursor vs Codex work split
+# DewDrops Swarm OS — Cursor vs Codex work split
 
 **Purpose:** Explicit routing so two coding agents do not thrash the same surfaces.  
-**Product / sync truth:** See [`../BOUNDARY_SPEC.md`](../BOUNDARY_SPEC.md) (Butler ↔ DewDrops ↔ Lifegirdle). This file is **only** about **who edits what in this repo**.
+**Product / sync truth:** See [`../BOUNDARY_SPEC.md`](../BOUNDARY_SPEC.md) (Butler ↔ DewDrops Swarm OS ↔ Lifegirdle). This file is **only** about **who edits what in this repo**.
 
 ---
 
