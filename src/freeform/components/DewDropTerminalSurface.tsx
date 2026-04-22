@@ -11,6 +11,7 @@ type DewDropTerminalSurfaceProps = {
   onStart: (agentId: string) => void
   onStop: (agentId: string) => void
   onRefresh: (agentId: string) => void
+  onReturnArtifact?: (agentId: string) => void
   onSendInput?: (agentId: string, input: string) => void | Promise<void>
   onResizeSession?: (agentId: string, sessionId: string, cols: number, rows: number) => void | Promise<void>
 }
@@ -36,6 +37,7 @@ export function DewDropTerminalSurface({
   onStart,
   onStop,
   onRefresh,
+  onReturnArtifact,
   onSendInput,
   onResizeSession,
 }: DewDropTerminalSurfaceProps) {
@@ -286,6 +288,16 @@ export function DewDropTerminalSurface({
           >
             Refresh
           </button>
+          {onReturnArtifact ? (
+            <button
+              type="button"
+              className="freeform-btn freeform-btn--tool"
+              onClick={() => onReturnArtifact(agent.id)}
+              disabled={busy || !sessionId}
+            >
+              Return
+            </button>
+          ) : null}
         </div>
       </div>
       <div className="freeform-terminal-surface-stage">

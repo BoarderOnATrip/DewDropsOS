@@ -44,6 +44,7 @@ export type CardViewProps = {
   onAgentTerminalStart?: (agentId: string) => void
   onAgentTerminalStop?: (agentId: string) => void
   onAgentTerminalRefresh?: (agentId: string) => void
+  onAgentTerminalReturnArtifact?: (agentId: string) => void
   onAgentTerminalSendInput?: (agentId: string, input: string) => void
   onAgentTerminalResize?: (agentId: string, sessionId: string, cols: number, rows: number) => void
   onReleaseNod: (agentId: string, which: 'specialist' | 'lead') => void
@@ -157,6 +158,7 @@ export function WorkflowCardView({
   onAgentTerminalStart,
   onAgentTerminalStop,
   onAgentTerminalRefresh,
+  onAgentTerminalReturnArtifact,
   onAgentTerminalSendInput,
   onAgentTerminalResize,
   onReleaseNod,
@@ -774,16 +776,33 @@ export function WorkflowCardView({
       </section>
     ) : null
 
-  const renderProblemRunSummary = () =>
-    problemRunStatus ? (
+  const latestLedgerEntry = card.kind === 'problem' ? card.runLedger?.[0] : undefined
+  const latestLedgerArtifact = latestLedgerEntry?.artifacts?.[0]
+
+  const renderProblemRunSummary = () => {
+    if (problemRunStatus) {
+      return (
+        <div className="freeform-problem-run-summary">
+          <div className="freeform-problem-run-summary-head">
+            <strong>Latest run</strong>
+            {problemRunId ? <span>{problemRunId.slice(-6)}</span> : null}
+          </div>
+          <p>{problemRunSummary || 'Run launched from Butler. Report pending.'}</p>
+        </div>
+      )
+    }
+
+    if (!latestLedgerEntry) return null
+    return (
       <div className="freeform-problem-run-summary">
         <div className="freeform-problem-run-summary-head">
-          <strong>Latest run</strong>
-          {problemRunId ? <span>{problemRunId.slice(-6)}</span> : null}
+          <strong>Latest return</strong>
+          <span>{latestLedgerEntry.runId.slice(-6)}</span>
         </div>
-        <p>{problemRunSummary || 'Run launched from Butler. Report pending.'}</p>
+        <p>{latestLedgerArtifact?.summary || `${latestLedgerEntry.title} returned to the briefcase.`}</p>
       </div>
-    ) : null
+    )
+  }
 
   const renderProblemSessionStrip = () =>
     problemSessionSummary ? (
@@ -1240,6 +1259,7 @@ export function WorkflowCardView({
                 onStart={onAgentTerminalStart ?? (() => undefined)}
                 onStop={onAgentTerminalStop ?? (() => undefined)}
                 onRefresh={onAgentTerminalRefresh ?? (() => undefined)}
+                onReturnArtifact={onAgentTerminalReturnArtifact}
                 onSendInput={onAgentTerminalSendInput}
                 onResizeSession={onAgentTerminalResize}
               />

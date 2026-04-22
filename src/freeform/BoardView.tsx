@@ -92,7 +92,12 @@ import { DEFAULT_KANBAN_MIN_AGENT_WIDTH, cardDisplayHeight, magneticKanbanDockPo
 import { reflowHubKanbanLayout, reflowSubagentLayout } from './kanbanReflow'
 import { openQuestionsForCard } from './openQuestions'
 import { applyReleaseNod } from './releaseNod'
-import { buildRunLedgerEntry, updateRunArtifactStatus, upsertRunLedgerEntry } from './runLedger'
+import {
+  buildDewDropRunLedgerEntry,
+  buildRunLedgerEntry,
+  updateRunArtifactStatus,
+  upsertRunLedgerEntry,
+} from './runLedger'
 import { clampNumber, swarmRunIsActive } from './runFormat'
 import { buildProblemSessionReadiness } from './sessionReadiness'
 import {
@@ -514,6 +519,7 @@ export default function BoardView({
     return window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
   })
   const [selectionTrace, setSelectionTrace] = useState<SelectionTraceEntry[]>([])
+  const returnedDewDropRunSignaturesRef = useRef(new Map<string, string>())
   const sizeRef = useRef(size)
   const cameraRef = useRef(camera)
   const cardsRef = useRef(cards)
@@ -2040,6 +2046,60 @@ export default function BoardView({
     }
   }, [])
 
+  const returnWorkerTerminalArtifact = useCallback((
+    agentId: string,
+    options?: { quiet?: boolean },
+  ) => {
+    const agent = cardsRef.current.find((card) => card.kind === 'agent' && card.id === agentId)
+    if (!agent) return
+    const problemId = agent.assignedToProblemId
+    if (!problemId) {
+      if (!options?.quiet) {
+        setBoardNotice({
+          text: `${agent.title} is not attached to a briefcase yet.`,
+          tone: 'error',
+        })
+      }
+      return
+    }
+
+    let changed = false
+    setCards((list) => {
+      let next = list
+      for (const card of list) {
+        if (card.id !== problemId || card.kind !== 'problem') continue
+        const existingEntry = card.runLedger?.find((entry) =>
+          entry.runId === `dewdrop-${agent.agentRuntime?.sessionState?.sessionId ?? agent.id}`,
+        )
+        const nextEntry = buildDewDropRunLedgerEntry(agent, {
+          roomId: card.id,
+          existingEntry,
+        })
+        if (existingEntry && JSON.stringify(existingEntry) === JSON.stringify(nextEntry)) {
+          return list
+        }
+        changed = true
+        next = list.map((candidate) =>
+          candidate.id === card.id && candidate.kind === 'problem'
+            ? {
+                ...candidate,
+                runLedger: upsertRunLedgerEntry(candidate.runLedger, nextEntry),
+              }
+            : candidate,
+        )
+        break
+      }
+      return next
+    })
+
+    if (!options?.quiet && changed) {
+      setBoardNotice({
+        text: `Returned ${agent.title} into the briefcase.`,
+        tone: 'ok',
+      })
+    }
+  }, [])
+
   const resizeWorkerTerminalAgent = useCallback(async (
     agentId: string,
     sessionId: string,
@@ -2093,6 +2153,22 @@ export default function BoardView({
     }, 30_000)
     return () => window.clearInterval(intervalId)
   }, [isJsdomRuntime, refreshWorkerHostStatus, selectedProblem, selectedProblemAgents])
+
+  useEffect(() => {
+    if (isJsdomRuntime) return
+    for (const agent of cards) {
+      if (agent.kind !== 'agent' || !agent.assignedToProblemId) continue
+      const sessionState = agent.agentRuntime?.sessionState
+      const sessionId = sessionState?.sessionId
+      const status = sessionState?.status
+      if (!sessionId || !status || !['done', 'failed', 'killed'].includes(status)) continue
+      const signature = `${status}:${sessionState.outputVersion ?? 0}:${sessionState.lastHeartbeatAt ?? ''}`
+      const key = `${agent.id}:${sessionId}`
+      if (returnedDewDropRunSignaturesRef.current.get(key) === signature) continue
+      returnedDewDropRunSignaturesRef.current.set(key, signature)
+      returnWorkerTerminalArtifact(agent.id, { quiet: true })
+    }
+  }, [cards, isJsdomRuntime, returnWorkerTerminalArtifact])
 
   useEffect(() => {
     if (isJsdomRuntime || !selectedProblem || selectedProblemAgents.length === 0) return
@@ -3751,6 +3827,7 @@ export default function BoardView({
               onAgentTerminalStart={startWorkerTerminalAgent}
               onAgentTerminalStop={stopWorkerTerminalAgent}
               onAgentTerminalRefresh={refreshWorkerTerminalAgent}
+              onAgentTerminalReturnArtifact={returnWorkerTerminalArtifact}
               onAgentTerminalSendInput={sendWorkerTerminalInput}
               onAgentTerminalResize={resizeWorkerTerminalAgent}
               onReleaseNod={onReleaseNod}
@@ -3811,6 +3888,7 @@ export default function BoardView({
             onWorkerTerminalStop={stopWorkerTerminalAgent}
             onWorkerTerminalRefresh={refreshWorkerTerminalAgent}
             onWorkerTerminalSendInput={sendWorkerTerminalInput}
+            onWorkerTerminalReturnArtifact={returnWorkerTerminalArtifact}
             onWorkerTerminalCheckHost={checkWorkerTerminalAgentHost}
             onWorkerTerminalRelayClipboard={relayClipboardToWorkerTerminal}
             onWorkerTerminalCopyShell={copyWorkerTerminalCommand}
@@ -4013,6 +4091,7 @@ export default function BoardView({
                 onStop={stopWorkerTerminalAgent}
                 onRefresh={refreshWorkerTerminalAgent}
                 onSendInput={sendWorkerTerminalInput}
+                onReturnArtifact={returnWorkerTerminalArtifact}
                 onCheckHost={checkWorkerTerminalAgentHost}
                 onRelayClipboard={relayClipboardToWorkerTerminal}
                 onCopyShell={copyWorkerTerminalCommand}

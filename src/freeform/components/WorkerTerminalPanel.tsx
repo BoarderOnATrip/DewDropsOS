@@ -10,6 +10,7 @@ type WorkerTerminalPanelProps = {
   onStop: (agentId: string) => void
   onRefresh: (agentId: string) => void
   onSendInput?: (agentId: string, input: string) => void
+  onReturnArtifact?: (agentId: string) => void
   onCheckHost?: (agentId: string, hostAlias: string) => void
   onRelayClipboard?: (agentId: string) => void
   onCopyShell?: (agentId: string, command: string) => void
@@ -26,6 +27,7 @@ export function WorkerTerminalPanel({
   onStop,
   onRefresh,
   onSendInput,
+  onReturnArtifact,
   onCheckHost,
   onRelayClipboard,
   onCopyShell,
@@ -70,6 +72,7 @@ export function WorkerTerminalPanel({
               onStop={onStop}
               onRefresh={onRefresh}
               onSendInput={onSendInput}
+              onReturnArtifact={onReturnArtifact}
               onCheckHost={onCheckHost}
               onRelayClipboard={onRelayClipboard}
               onCopyShell={onCopyShell}

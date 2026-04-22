@@ -1,7 +1,7 @@
 import type { ButlerSwarmRun, ButlerSwarmRunReport } from '../lib/butlerBridge'
 import type { BriefPacket } from './briefSpec'
 import { evaluateContinuation } from './continuationPolicy'
-import type { ArtifactStatus, RunArtifact, RunLedgerEntry, SelfEvaluation } from './types'
+import type { ArtifactStatus, RunArtifact, RunLedgerEntry, SelfEvaluation, WorkflowCard } from './types'
 
 function reportArtifactId(runId: string): string {
   return `${runId}-report`
@@ -13,6 +13,14 @@ function summaryArtifactId(runId: string): string {
 
 function agentArtifactId(runId: string, agentId: string, index: number): string {
   return `${runId}-agent-${agentId || index}`
+}
+
+function dewdropSummaryArtifactId(runId: string): string {
+  return `${runId}-dewdrop-summary`
+}
+
+function dewdropTranscriptArtifactId(runId: string): string {
+  return `${runId}-dewdrop-transcript`
 }
 
 function isoNow(): string {
@@ -35,6 +43,58 @@ function reportContinuationDecision(
   report: ButlerSwarmRunReport | undefined,
 ): RunLedgerEntry['continuationDecision'] | undefined {
   return report?.continuationDecision ?? report?.continuation_decision
+}
+
+function truncateTranscript(content: string, limit = 12_000): { body: string; truncated: boolean } {
+  if (content.length <= limit) {
+    return { body: content, truncated: false }
+  }
+  return {
+    body: content.slice(content.length - limit),
+    truncated: true,
+  }
+}
+
+function dewdropRuntimeLabel(agent: WorkflowCard): string {
+  const profile = agent.agentRuntime?.profile
+  if (!profile || profile === 'custom') return 'shell'
+  return profile
+}
+
+function dewdropRunId(agent: WorkflowCard): string {
+  const sessionId = agent.agentRuntime?.sessionState?.sessionId?.trim()
+  return sessionId ? `dewdrop-${sessionId}` : `dewdrop-${agent.id}`
+}
+
+function dewdropSummary(agent: WorkflowCard): string {
+  const runtime = agent.agentRuntime
+  const logTail = runtime?.sessionState?.logTail ?? []
+  const lastSignal = [...logTail].reverse().find((line) => line.trim()) ?? runtime?.sessionState?.currentTask ?? 'No output yet.'
+  const status = runtime?.sessionState?.status ?? 'idle'
+  return `${agent.title} returned from ${dewdropRuntimeLabel(agent)} with status ${status}. ${lastSignal}`
+}
+
+function dewdropTranscript(agent: WorkflowCard): string {
+  const runtime = agent.agentRuntime
+  const sessionState = runtime?.sessionState
+  const rawTranscript = sessionState?.terminalBuffer?.trim() || (sessionState?.logTail ?? []).join('\n').trim()
+  const transcript = rawTranscript || 'No terminal transcript was captured.'
+  const trimmed = truncateTranscript(transcript)
+  const route = runtime?.vpnAlias?.trim() ? `vpn-ssh via ${runtime.vpnAlias.trim()}` : 'local'
+  const header = [
+    `# ${agent.title} return`,
+    '',
+    `Runtime: ${dewdropRuntimeLabel(agent)}`,
+    `Command: ${runtime?.command?.trim() || 'zsh -i -f'}`,
+    `Root: ${runtime?.workspaceRoot?.trim() || '.'}`,
+    `Route: ${route}`,
+    `Status: ${sessionState?.status ?? 'idle'}`,
+    trimmed.truncated ? 'Transcript: truncated to the latest 12000 characters.' : 'Transcript: full captured tail.',
+    '',
+    '## Transcript',
+    trimmed.body,
+  ]
+  return header.join('\n')
 }
 
 function mergeArtifactStatuses(
@@ -136,6 +196,63 @@ export function buildRunLedgerEntry(
     briefHash,
     selfEvaluation,
     continuationDecision,
+  }
+}
+
+export function buildDewDropRunLedgerEntry(
+  agent: WorkflowCard,
+  options: {
+    roomId: string
+    existingEntry?: RunLedgerEntry
+    returnedAt?: string
+  },
+): RunLedgerEntry {
+  const runId = dewdropRunId(agent)
+  const returnedAt =
+    options.returnedAt ??
+    agent.agentRuntime?.sessionState?.lastHeartbeatAt ??
+    agent.agentRuntime?.sessionState?.startedAt ??
+    isoNow()
+  const summary = dewdropSummary(agent)
+  const transcript = dewdropTranscript(agent)
+  const status = agent.agentRuntime?.sessionState?.status ?? 'running'
+  const summaryKind: RunArtifact['kind'] =
+    status === 'failed' || status === 'killed' ? 'error' : 'note'
+
+  const artifacts = mergeArtifactStatuses(
+    [
+      {
+        id: dewdropSummaryArtifactId(runId),
+        runId,
+        kind: summaryKind,
+        title: `${agent.title} return summary`,
+        summary,
+        createdAt: returnedAt,
+        status: 'provisional',
+      },
+      {
+        id: dewdropTranscriptArtifactId(runId),
+        runId,
+        kind: 'report',
+        title: `${agent.title} transcript`,
+        summary: `Terminal transcript returned from ${agent.title}.`,
+        content: transcript,
+        createdAt: returnedAt,
+        status: 'provisional',
+      },
+    ],
+    options.existingEntry,
+  )
+
+  return {
+    runId,
+    contractId: `dewdrop:${agent.id}`,
+    roomId: options.roomId,
+    title: `${agent.title} return`,
+    status,
+    startedAt: agent.agentRuntime?.sessionState?.startedAt ?? returnedAt,
+    completedAt: ['done', 'failed', 'killed'].includes(status) ? returnedAt : undefined,
+    artifacts,
   }
 }
 

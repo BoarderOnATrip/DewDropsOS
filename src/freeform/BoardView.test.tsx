@@ -310,6 +310,72 @@ describe('BoardView', () => {
     expect(screen.getByLabelText('Host')).toHaveValue('')
   })
 
+  it('returns a selected terminal artifact into the room ledger', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BoardView
+        bootId="board-return-artifact"
+        bootState={{
+          camera: { x: 0, y: 0, zoom: 0.9 },
+          cards: [
+            problemCard(),
+            {
+              id: 'agent-1',
+              title: 'Builder',
+              expanded: true,
+              color: '#b3ffcf',
+              kind: 'agent',
+              x: 520,
+              y: 120,
+              width: 176,
+              height: 112,
+              assignedToProblemId: 'problem-1',
+              parentAgentId: null,
+              agentRuntime: {
+                kind: 'terminal',
+                profile: 'hermes',
+                transport: 'cli',
+                instanceLabel: 'builder',
+                command: 'hermes',
+                workspaceRoot: '.',
+                sessionPolicy: {
+                  allowNetwork: false,
+                  maxRuntimeMs: 120000,
+                  maxSteps: 40,
+                  requiresApprovalFor: ['destructive', 'external_network', 'privileged'],
+                  writableRoots: [],
+                },
+                sessionState: {
+                  status: 'running',
+                  sessionId: 'session-1',
+                  startedAt: '2026-04-19T10:00:00.000Z',
+                  lastHeartbeatAt: '2026-04-19T10:02:00.000Z',
+                  currentTask: 'hermes',
+                  outputVersion: 2,
+                  terminalBuffer: 'build complete\nall green',
+                  logTail: ['build complete', 'all green'],
+                },
+              },
+            },
+          ],
+          wires: [],
+        }}
+        focusedProblemId="problem-1"
+      />,
+    )
+
+    const builderCardTitle = screen
+      .getAllByText('Builder')
+      .find((element) => element.classList.contains('freeform-card-title'))
+    expect(builderCardTitle).toBeTruthy()
+    await user.click(builderCardTitle as HTMLElement)
+    await user.click(screen.getByRole('button', { name: 'Return artifact' }))
+
+    expect(screen.getByText('Builder return')).toBeInTheDocument()
+    expect(screen.getAllByText(/Builder returned from hermes with status running/i).length).toBeGreaterThan(0)
+  })
+
   it('persists mission edits made directly inside the briefcase harness', async () => {
     const user = userEvent.setup()
 

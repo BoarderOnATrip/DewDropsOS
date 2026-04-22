@@ -87,6 +87,7 @@ type ProblemSwarmInspectorProps = {
   onWorkerTerminalStop: (agentId: string) => void
   onWorkerTerminalRefresh: (agentId: string) => void
   onWorkerTerminalSendInput: (agentId: string, input: string) => void
+  onWorkerTerminalReturnArtifact: (agentId: string) => void
   onWorkerTerminalCheckHost: (agentId: string, hostAlias: string) => void
   onWorkerTerminalRelayClipboard: (agentId: string) => void
   onWorkerTerminalCopyShell: (agentId: string, command: string) => void
@@ -190,6 +191,7 @@ export function ProblemSwarmInspector({
   onWorkerTerminalStop,
   onWorkerTerminalRefresh,
   onWorkerTerminalSendInput,
+  onWorkerTerminalReturnArtifact,
   onWorkerTerminalCheckHost,
   onWorkerTerminalRelayClipboard,
   onWorkerTerminalCopyShell,
@@ -542,6 +544,7 @@ export function ProblemSwarmInspector({
             onStop={onWorkerTerminalStop}
             onRefresh={onWorkerTerminalRefresh}
             onSendInput={onWorkerTerminalSendInput}
+            onReturnArtifact={onWorkerTerminalReturnArtifact}
             onCheckHost={onWorkerTerminalCheckHost}
             onRelayClipboard={onWorkerTerminalRelayClipboard}
             onCopyShell={onWorkerTerminalCopyShell}
@@ -566,6 +569,7 @@ export function ProblemSwarmInspector({
           onStop={onWorkerTerminalStop}
           onRefresh={onWorkerTerminalRefresh}
           onSendInput={onWorkerTerminalSendInput}
+          onReturnArtifact={onWorkerTerminalReturnArtifact}
           onCheckHost={onWorkerTerminalCheckHost}
           onRelayClipboard={onWorkerTerminalRelayClipboard}
           onCopyShell={onWorkerTerminalCopyShell}

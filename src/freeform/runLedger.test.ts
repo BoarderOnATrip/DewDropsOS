@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { ButlerSwarmRun } from '../lib/butlerBridge'
 import type { BriefPacket } from './briefSpec'
-import { buildRunLedgerEntry, setRunPendingArtifactsStatus, updateRunArtifactStatus, upsertRunLedgerEntry } from './runLedger'
-import type { RunLedgerEntry, SelfEvaluation } from './types'
+import {
+  buildDewDropRunLedgerEntry,
+  buildRunLedgerEntry,
+  setRunPendingArtifactsStatus,
+  updateRunArtifactStatus,
+  upsertRunLedgerEntry,
+} from './runLedger'
+import type { RunLedgerEntry, SelfEvaluation, WorkflowCard } from './types'
 
 function run(overrides: Partial<ButlerSwarmRun> = {}): ButlerSwarmRun {
   return {
@@ -61,6 +67,41 @@ function selfEvaluation(overrides: Partial<SelfEvaluation> = {}): SelfEvaluation
     escalationReason: null,
     assumptions: ['Used the existing local store wiring.'],
     handoffNotes: 'Verifier should run the acceptance pass.',
+    ...overrides,
+  }
+}
+
+function dewdropAgent(overrides: Partial<WorkflowCard> = {}): WorkflowCard {
+  return {
+    id: 'agent-1',
+    title: 'Builder',
+    expanded: true,
+    color: '#0f0',
+    kind: 'agent',
+    x: 0,
+    y: 0,
+    width: 180,
+    height: 120,
+    assignedToProblemId: 'room-1',
+    parentAgentId: null,
+    agentRuntime: {
+      kind: 'terminal',
+      profile: 'hermes',
+      transport: 'cli',
+      instanceLabel: 'builder',
+      command: 'hermes',
+      workspaceRoot: '/tmp/project',
+      sessionState: {
+        status: 'done',
+        sessionId: 'session-1',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        lastHeartbeatAt: '2026-01-01T00:10:00.000Z',
+        currentTask: 'hermes',
+        outputVersion: 3,
+        terminalBuffer: 'build complete\nall green',
+        logTail: ['build complete', 'all green'],
+      },
+    },
     ...overrides,
   }
 }
@@ -188,6 +229,25 @@ describe('buildRunLedgerEntry', () => {
 
     expect(entry.artifacts.some((artifact) => artifact.kind === 'report')).toBe(true)
     expect(entry.artifacts.find((artifact) => artifact.kind === 'report')?.content).toContain('Detailed findings')
+  })
+})
+
+describe('buildDewDropRunLedgerEntry', () => {
+  it('materializes a DewDrop return into note and transcript artifacts', () => {
+    const entry = buildDewDropRunLedgerEntry(dewdropAgent(), {
+      roomId: 'room-1',
+    })
+
+    expect(entry.runId).toBe('dewdrop-session-1')
+    expect(entry.contractId).toBe('dewdrop:agent-1')
+    expect(entry.title).toBe('Builder return')
+    expect(entry.status).toBe('done')
+    expect(entry.artifacts).toHaveLength(2)
+    expect(entry.artifacts[0]?.title).toBe('Builder return summary')
+    expect(entry.artifacts[0]?.summary).toContain('Builder returned from hermes')
+    expect(entry.artifacts[1]?.title).toBe('Builder transcript')
+    expect(entry.artifacts[1]?.content).toContain('# Builder return')
+    expect(entry.artifacts[1]?.content).toContain('build complete')
   })
 })
 

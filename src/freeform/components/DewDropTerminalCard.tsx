@@ -22,6 +22,7 @@ type DewDropTerminalCardProps = {
   onStop: (agentId: string) => void
   onRefresh: (agentId: string) => void
   onSendInput?: (agentId: string, input: string) => void
+  onReturnArtifact?: (agentId: string) => void
   onCheckHost?: (agentId: string, hostAlias: string) => void
   onRelayClipboard?: (agentId: string) => void
   onCopyShell?: (agentId: string, command: string) => void
@@ -50,6 +51,7 @@ export function DewDropTerminalCard({
   onStop,
   onRefresh,
   onSendInput,
+  onReturnArtifact,
   onCheckHost,
   onRelayClipboard,
   onCopyShell,
@@ -228,6 +230,16 @@ export function DewDropTerminalCard({
         >
           Refresh
         </button>
+        {onReturnArtifact ? (
+          <button
+            type="button"
+            className="freeform-btn freeform-btn--tool"
+            onClick={() => onReturnArtifact(agent.id)}
+            disabled={busy || !sessionId}
+          >
+            Return artifact
+          </button>
+        ) : null}
       </div>
 
       <div className="freeform-toolbar-panel-actions">

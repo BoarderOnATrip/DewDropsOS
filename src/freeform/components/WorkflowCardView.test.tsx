@@ -259,6 +259,61 @@ describe('WorkflowCardView', () => {
     expect(screen.getByText('Recorded provenance available')).toBeInTheDocument()
   })
 
+  it('shows the latest returned artifact when no Butler run is active', () => {
+    const problem: WorkflowCard = {
+      id: 'p1',
+      title: 'Launch',
+      expanded: true,
+      color: '#fff',
+      kind: 'problem',
+      x: 0,
+      y: 0,
+      width: 240,
+      height: 180,
+      runLedger: [
+        {
+          runId: 'dewdrop-session-1',
+          contractId: 'dewdrop:agent-1',
+          roomId: 'p1',
+          title: 'Builder return',
+          status: 'done',
+          startedAt: '2026-04-19T10:00:00.000Z',
+          artifacts: [
+            {
+              id: 'artifact-1',
+              runId: 'dewdrop-session-1',
+              kind: 'note',
+              title: 'Builder return summary',
+              summary: 'Builder returned from hermes with status done. all green',
+              createdAt: '2026-04-19T10:10:00.000Z',
+              status: 'provisional',
+            },
+          ],
+        },
+      ],
+    }
+
+    render(
+      <WorkflowCardView
+        card={problem}
+        cards={[problem]}
+        wires={[]}
+        handshakeFocus={null}
+        selected={false}
+        camera={{ x: 0, y: 0, zoom: 1 }}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+        onResize={vi.fn()}
+        onDragEnd={vi.fn()}
+        onToggleExpand={vi.fn()}
+        onReleaseNod={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Latest return')).toBeInTheDocument()
+    expect(screen.getByText(/Builder returned from hermes/i)).toBeInTheDocument()
+  })
+
   it('treats the inline terminal surface as interactive instead of reselecting the card shell', () => {
     const onSelect = vi.fn()
     render(
